@@ -95,7 +95,17 @@ def _download(url: str) -> bytes:
             return raw
         except HTTPError as exc:
             if exc.code not in (408, 429, 500, 502, 503, 504) or attempt == 2:
-                raise WeatherError(f"Archived weather API returned HTTP {exc.code}; no substitute weather was used") from exc
+                detail = ""
+                if exc.fp is not None:
+                    try:
+                        reason = json.loads(exc.read(4096)).get("reason")
+                        if isinstance(reason, str):
+                            detail = ": " + reason[:300]
+                    except (ValueError, OSError, AttributeError):
+                        pass
+                exc.close()
+                raise WeatherError(f"Archived weather API returned HTTP {exc.code}{detail}; no substitute weather was used") from exc
+            exc.close()
         except (URLError, TimeoutError, OSError) as exc:
             if attempt == 2:
                 raise WeatherError(f"Cannot retrieve archived weather: {exc}") from exc
@@ -221,6 +231,8 @@ def fetch_weather(as_of: datetime, targets: list[dict], hours: int, cache_dir: P
     run = select_run(issue, availability_lag_hours)
     assumed_available = run + timedelta(hours=availability_lag_hours)
     valid_times = [issue + timedelta(hours=index) for index in range(1, hours + 1)]
+    if valid_times[-1] >= run + timedelta(days=7):
+        raise WeatherError("Requested hours exceed this adapter's seven-day exact-run window; reduce the assumed publication lag")
     warnings = [
         f"Доступность погоды в прошлом НЕ подтверждена: assumed available_at = run + {availability_lag_hours:g} ч. Это допущение, а не архивный журнал публикации; competition_ready=false.",
         "В документации ранний архив ECMWF назван hindcasts. Происхождение конкретного запуска (операционный прогноз или ретропрогноз) требует подтверждения источника.",
@@ -235,7 +247,9 @@ def fetch_weather(as_of: datetime, targets: list[dict], hours: int, cache_dir: P
             "models": MODEL, "run": run.strftime("%Y-%m-%dT%H:%M"),
             "hourly": "wind_speed_100m,temperature_2m", "wind_speed_unit": "ms",
             "temperature_unit": "celsius", "timezone": "UTC", "timeformat": "iso8601",
-            "start_date": valid_times[0].date().isoformat(), "end_date": valid_times[-1].date().isoformat(),
+            # Single Runs rejects start_date/end_date. Fetch the run's window
+            # and select only the requested issue-relative hours locally.
+            "forecast_days": 7,
         }
         url = ENDPOINT + "?" + urlencode(query)
         raw, retrieved_at, cache_hit = _response(url, Path(cache_dir), refresh)

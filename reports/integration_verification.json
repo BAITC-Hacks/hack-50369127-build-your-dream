@@ -1,0 +1,385 @@
+{
+  "date": "2026-09-23",
+  "source_archive_sha256": "e8ca07855c2d0bc861f3272ac491c08eefe7a4dfed796aec96dbcf2c55c7da42",
+  "source_files_unchanged": true,
+  "training": {
+    "elapsed_seconds": 168.203,
+    "build": {
+      "availability_verified": false,
+      "excluded_issues": [
+        {
+          "issue_time": "2025-08-04T23:00:00+00:00",
+          "reason": "Weather cache miss in offline mode: T1 2025-08-04 12:00:00+00:00"
+        },
+        {
+          "issue_time": "2025-08-05T23:00:00+00:00",
+          "reason": "Weather cache miss in offline mode: T1 2025-08-05 12:00:00+00:00"
+        },
+        {
+          "issue_time": "2025-08-06T23:00:00+00:00",
+          "reason": "Weather cache miss in offline mode: T1 2025-08-06 12:00:00+00:00"
+        },
+        {
+          "issue_time": "2025-08-07T23:00:00+00:00",
+          "reason": "Weather cache miss in offline mode: T1 2025-08-07 12:00:00+00:00"
+        },
+        {
+          "issue_time": "2025-08-08T23:00:00+00:00",
+          "reason": "Weather cache miss in offline mode: T1 2025-08-08 12:00:00+00:00"
+        },
+        {
+          "issue_time": "2025-08-09T23:00:00+00:00",
+          "reason": "Weather cache miss in offline mode: T1 2025-08-09 12:00:00+00:00"
+        }
+      ],
+      "issues": 419,
+      "labels_present": 36636,
+      "requested_issues": 425,
+      "rows": 40224
+    },
+    "temporal_boundary_checks": {
+      "final_fit_available_by_cutoff": true,
+      "fit_available_by_first_validation_issue": true,
+      "january_fit_available_by_cutoff": true,
+      "validation_available_by_first_january_issue": true
+    },
+    "fit_rows": {
+      "fit": 30708,
+      "validation": 2896,
+      "january_test": 2928,
+      "final_fit": 36632
+    },
+    "selected_spec": {
+      "depth": 4,
+      "early_stopping_rounds": 80,
+      "iterations": 887,
+      "kind": "catboost",
+      "loss": "MAE",
+      "name": "catboost_d4_mae"
+    },
+    "cutoff": "2026-01-31T23:00:00+00:00",
+    "packages": {
+      "PyYAML": "6.0.2",
+      "catboost": "1.2.8",
+      "joblib": "1.4.2",
+      "numpy": "1.26.4",
+      "pandas": "2.2.3",
+      "requests": "2.32.3",
+      "scikit-learn": "1.6.1",
+      "scipy": "1.13.1"
+    }
+  },
+  "january": {
+    "metrics": {
+      "model": "selected_model",
+      "turbine_id": "ALL",
+      "horizon": "ALL",
+      "n": 2928,
+      "mae": 0.18603061746927146,
+      "rmse": 0.25715671703426574,
+      "bias": -0.021474253550269856,
+      "coverage": 0.9183743169398907,
+      "interval_width": 0.681737451756331
+    },
+    "comparison": {
+      "archive_rows": 2928,
+      "matched_rows": 2928,
+      "max_absolute_prediction_difference": 0,
+      "max_absolute_target_difference": 0,
+      "only_archive_rows": 0,
+      "only_retrained_rows": 0,
+      "retrained_rows": 2928
+    }
+  },
+  "native_replay": {
+    "all_target_times_after_model_cutoff": true,
+    "archive_sha256": "e8ca07855c2d0bc861f3272ac491c08eefe7a4dfed796aec96dbcf2c55c7da42",
+    "exactly_matching_rows": 2784,
+    "features_constructed_independently_per_issue": true,
+    "february_day_ahead_rows": 1344,
+    "february_forecast_rows": 2640,
+    "february_unique_hours": 672,
+    "first_issue": "2026-01-31T23:00:00+00:00",
+    "forecast_rows": 2784,
+    "issue_count": 29,
+    "issues": [
+      {
+        "first_target": "2026-02-01T00:00:00+00:00",
+        "issue": "2026-01-31T23:00:00+00:00",
+        "last_target": "2026-02-02T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-02T00:00:00+00:00",
+        "issue": "2026-02-01T23:00:00+00:00",
+        "last_target": "2026-02-03T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-03T00:00:00+00:00",
+        "issue": "2026-02-02T23:00:00+00:00",
+        "last_target": "2026-02-04T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-04T00:00:00+00:00",
+        "issue": "2026-02-03T23:00:00+00:00",
+        "last_target": "2026-02-05T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-05T00:00:00+00:00",
+        "issue": "2026-02-04T23:00:00+00:00",
+        "last_target": "2026-02-06T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-06T00:00:00+00:00",
+        "issue": "2026-02-05T23:00:00+00:00",
+        "last_target": "2026-02-07T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-07T00:00:00+00:00",
+        "issue": "2026-02-06T23:00:00+00:00",
+        "last_target": "2026-02-08T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-08T00:00:00+00:00",
+        "issue": "2026-02-07T23:00:00+00:00",
+        "last_target": "2026-02-09T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-09T00:00:00+00:00",
+        "issue": "2026-02-08T23:00:00+00:00",
+        "last_target": "2026-02-10T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-10T00:00:00+00:00",
+        "issue": "2026-02-09T23:00:00+00:00",
+        "last_target": "2026-02-11T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-11T00:00:00+00:00",
+        "issue": "2026-02-10T23:00:00+00:00",
+        "last_target": "2026-02-12T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-12T00:00:00+00:00",
+        "issue": "2026-02-11T23:00:00+00:00",
+        "last_target": "2026-02-13T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-13T00:00:00+00:00",
+        "issue": "2026-02-12T23:00:00+00:00",
+        "last_target": "2026-02-14T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-14T00:00:00+00:00",
+        "issue": "2026-02-13T23:00:00+00:00",
+        "last_target": "2026-02-15T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-15T00:00:00+00:00",
+        "issue": "2026-02-14T23:00:00+00:00",
+        "last_target": "2026-02-16T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-16T00:00:00+00:00",
+        "issue": "2026-02-15T23:00:00+00:00",
+        "last_target": "2026-02-17T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-17T00:00:00+00:00",
+        "issue": "2026-02-16T23:00:00+00:00",
+        "last_target": "2026-02-18T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-18T00:00:00+00:00",
+        "issue": "2026-02-17T23:00:00+00:00",
+        "last_target": "2026-02-19T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-19T00:00:00+00:00",
+        "issue": "2026-02-18T23:00:00+00:00",
+        "last_target": "2026-02-20T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-20T00:00:00+00:00",
+        "issue": "2026-02-19T23:00:00+00:00",
+        "last_target": "2026-02-21T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-21T00:00:00+00:00",
+        "issue": "2026-02-20T23:00:00+00:00",
+        "last_target": "2026-02-22T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-22T00:00:00+00:00",
+        "issue": "2026-02-21T23:00:00+00:00",
+        "last_target": "2026-02-23T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-23T00:00:00+00:00",
+        "issue": "2026-02-22T23:00:00+00:00",
+        "last_target": "2026-02-24T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-24T00:00:00+00:00",
+        "issue": "2026-02-23T23:00:00+00:00",
+        "last_target": "2026-02-25T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-25T00:00:00+00:00",
+        "issue": "2026-02-24T23:00:00+00:00",
+        "last_target": "2026-02-26T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-26T00:00:00+00:00",
+        "issue": "2026-02-25T23:00:00+00:00",
+        "last_target": "2026-02-27T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-27T00:00:00+00:00",
+        "issue": "2026-02-26T23:00:00+00:00",
+        "last_target": "2026-02-28T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-02-28T00:00:00+00:00",
+        "issue": "2026-02-27T23:00:00+00:00",
+        "last_target": "2026-03-01T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      },
+      {
+        "first_target": "2026-03-01T00:00:00+00:00",
+        "issue": "2026-02-28T23:00:00+00:00",
+        "last_target": "2026-03-02T23:00:00+00:00",
+        "max_absolute_difference_vs_archive": 0,
+        "rows": 96
+      }
+    ],
+    "last_issue": "2026-02-28T23:00:00+00:00",
+    "max_absolute_difference_vs_archive": 0,
+    "model_sha256": "cf9485cbb4acf62c034a9b0da65c478355e058e09f4e6c8e2aa717528eb221b6",
+    "native_worker_invocations": 1,
+    "status": "complete",
+    "supplied_joblib_loaded": false,
+    "tree_count": 887,
+    "verification": "freshly_trained_native_cbm_vs_saved_archive_all_issues",
+    "weather_publication_assumption": "8h unverified delay from run initialization"
+  },
+  "http_replay": {
+    "runs": 29,
+    "all_execution": "recomputed",
+    "max_archive_difference": 0,
+    "rows_all_horizons": 2784,
+    "february_rows": 2640,
+    "submission_rows": 1344,
+    "coverage": {
+      "1": 672,
+      "2": 672
+    }
+  },
+  "online_controller": {
+    "status": "passed",
+    "rows": 96,
+    "issue": "2026-02-01T23:00:00Z",
+    "model_source": "freshly_retrained_local_bundle",
+    "supplied_archive_joblib_loaded": false,
+    "fresh_local_joblib_loaded": true,
+    "online_refresh": true,
+    "weather_runs": [
+      "2026-02-01 12:00:00+00:00"
+    ],
+    "availability_verified": false,
+    "columns": [
+      "turbine_id",
+      "issue_time",
+      "run_time",
+      "available_at",
+      "valid_time",
+      "lead_hours",
+      "weather_lead_hours",
+      "availability_verified",
+      "availability_basis",
+      "weather_sha256",
+      "wind_speed_100m",
+      "fallback_age_hours",
+      "power_norm",
+      "lower_80",
+      "upper_80",
+      "wide_interval",
+      "ramp_alert",
+      "model_sha256",
+      "forecast_id"
+    ]
+  },
+  "tests": {
+    "total": 78,
+    "passed": 78,
+    "duration_seconds": 16.731,
+    "app_tests": 57,
+    "research_tests": 21,
+    "python": "3.12.14",
+    "pip_check": "passed",
+    "javascript_syntax": "passed"
+  },
+  "browser_visual_verification": false,
+  "competition_ready": false,
+  "open_questions": [
+    "Telemetry timezone and interval convention",
+    "Historical publication evidence for weather runs",
+    "Official submission format and scoring metric",
+    "February observed targets unavailable"
+  ],
+  "reproduction_script": "scripts/retrain_project.py"
+}

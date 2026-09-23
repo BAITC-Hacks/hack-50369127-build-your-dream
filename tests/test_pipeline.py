@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -141,7 +142,7 @@ class PipelineTests(unittest.TestCase):
         offline = WeatherClient(self.cfg, offline=True)
         pd.testing.assert_frame_equal(a, offline.fetch(self.cfg["turbines"][0], self.issue, self.times))
         offline.close()
-        with sqlite3.connect(client.cache) as db:
+        with closing(sqlite3.connect(client.cache)) as db, db:
             db.execute("UPDATE weather_cache SET payload_json='{}'")
         with self.assertRaisesRegex(ValueError, "Corrupt"):
             client.fetch(self.cfg["turbines"][0], self.issue, self.times)
@@ -159,11 +160,11 @@ class PipelineTests(unittest.TestCase):
         client = WeatherClient(self.cfg, session=session)
         try:
             client.fetch(self.cfg["turbines"][0], self.issue, self.times)
-            with sqlite3.connect(client.cache) as db:
+            with closing(sqlite3.connect(client.cache)) as db:
                 original = db.execute("SELECT request_json,payload_json,payload_sha256 FROM weather_cache").fetchone()
             for column, altered in (("request_json", "{}"), ("payload_json", "{}"), ("payload_sha256", "0" * 64)):
                 with self.subTest(column=column):
-                    with sqlite3.connect(client.cache) as db:
+                    with closing(sqlite3.connect(client.cache)) as db, db:
                         db.execute("UPDATE weather_cache SET request_json=?,payload_json=?,payload_sha256=?", original)
                         db.execute(f"UPDATE weather_cache SET {column}=?", (altered,))
                     for refresh in (False, True):
@@ -186,7 +187,7 @@ class PipelineTests(unittest.TestCase):
                  patch.object(malformed, "json", side_effect=ValueError("Malformed JSON")):
                 with self.assertRaisesRegex(ValueError, "Invalid weather JSON"):
                     client.fetch(self.cfg["turbines"][0], self.issue, self.times)
-            with sqlite3.connect(client.cache) as db:
+            with closing(sqlite3.connect(client.cache)) as db:
                 self.assertEqual(db.execute("SELECT COUNT(*) FROM weather_cache").fetchone()[0], 0)
         finally:
             client.close()

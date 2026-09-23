@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 import json
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -67,8 +68,9 @@ class WeatherTests(unittest.TestCase):
         self.assertEqual(query["run"], ["2026-01-31T06:00"])
         self.assertEqual(query["models"], ["ecmwf_ifs"])
         self.assertEqual(query["wind_speed_unit"], ["ms"])
-        self.assertEqual(query["start_date"], ["2026-01-31"])
-        self.assertEqual(query["end_date"], ["2026-02-02"])
+        self.assertEqual(query["forecast_days"], ["7"])
+        self.assertNotIn("start_date", query)
+        self.assertNotIn("end_date", query)
         self.assertFalse(provenance["competition_ready"])
         self.assertFalse(provenance["availability_verified"])
         self.assertFalse(provenance["operational_run_verified"])
@@ -122,6 +124,7 @@ class WeatherTests(unittest.TestCase):
 
     def test_validates_inputs_before_request(self):
         variants = [{"targets": []}, {"targets": TARGETS * 2}, {"hours": 0}, {"hours": 49},
+                    {"availability_lag_hours": 168},
                     {"targets": [{"id": "T1", "latitude": float("nan"), "longitude": 78.5}]}]
         for args in variants:
             with self.subTest(args=args), self.assertRaises(WeatherError):
@@ -144,6 +147,14 @@ class WeatherTests(unittest.TestCase):
         with patch("windagent.weather.urlopen", side_effect=error) as request:
             with self.assertRaisesRegex(WeatherError, "HTTP 400"):
                 _download("https://single-runs-api.open-meteo.com/v1/forecast?run=2026-01-31T06:00")
+            request.assert_called_once()
+
+    def test_api_error_includes_provider_reason_without_retrying_bad_query(self):
+        body = io.BytesIO(b'{"error":true,"reason":"Parameter start_date must not be set"}')
+        error = HTTPError("https://example.invalid", 400, "bad request", {}, body)
+        with patch("windagent.weather.urlopen", side_effect=error) as request:
+            with self.assertRaisesRegex(WeatherError, "start_date must not be set"):
+                _download("https://example.invalid")
             request.assert_called_once()
 
 

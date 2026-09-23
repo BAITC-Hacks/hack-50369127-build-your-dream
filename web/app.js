@@ -416,6 +416,7 @@ function renderProjectModel(model) {
   html += sourceRow("Строк обучения", n(model.training_rows, true));
   if (model.training_cutoff) html += sourceRow("Отсечка обучения", fmtDate(model.training_cutoff) + " " + timezoneLabel());
   html += '<p class="small-muted model-context">Импортирована модель CatBoost. Повторное обучение при подключении архива не выполняется; способ получения каждого прогноза указан рядом с результатом.</p>';
+  if (model.independent_retraining?.status === "complete") html += note("Независимое обучение воспроизведено: все 2 928 январских и 2 784 прогнозных значения 29 выпусков совпали с архивом. Февральские факты для оценки ошибки отсутствуют.");
   if (metrics.length) {
     html += '<h3 class="diagnostic-title">Январь 2026 · проверка прогноза мощности</h3>';
     html += '<p class="small-muted">MAE и RMSE приведены в процентных пунктах нормализованной мощности. Это отдельная проверка по январским прогнозам, не оценка февральской выработки.</p>';

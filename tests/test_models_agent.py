@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -95,7 +96,7 @@ class ModelAgentTests(unittest.TestCase):
                 third = agent.run(issue)
                 self.assertEqual(second.forecast_id.iloc[0], third.forecast_id.iloc[0])
                 np.testing.assert_array_equal(second.power_norm.to_numpy(), third.power_norm.to_numpy())
-                with sqlite3.connect(agent.database) as db:
+                with closing(sqlite3.connect(agent.database)) as db:
                     events = [r[0] for r in db.execute("SELECT state FROM events")]
                 self.assertIn("REPLAN", events)
                 self.assertIn("UNCHANGED", events)
@@ -142,7 +143,7 @@ class ModelAgentTests(unittest.TestCase):
                         with self.assertRaises(type(error)):
                             agent.run(issue)
                         self.assertEqual(client.calls, 1)
-                        with sqlite3.connect(agent.database) as db:
+                        with closing(sqlite3.connect(agent.database)) as db:
                             states = [row[0] for row in db.execute("SELECT state FROM events")]
                             published = db.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0]
                         self.assertIn("FAILED", states)

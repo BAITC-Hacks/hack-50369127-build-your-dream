@@ -1,0 +1,21 @@
+{
+  "python": "3.12.14",
+  "tests_passed": 16,
+  "offline_submission_identical": true,
+  "submission_sha256": "115dfe918841b4fc3a775dedd5a4b6d26338a0236688b379c7ffbd2ce9c9c4bc",
+  "january_mae": 0.1860306174692714,
+  "january_rmse": 0.2571567170342657,
+  "baseline_curve_mae": 0.2494771850891193,
+  "relative_mae_improvement_percent": 25.431811569135366,
+  "replay": {
+    "issue_count": 29,
+    "forecast_rows": 2784,
+    "february_day_ahead_rows": 1344,
+    "february_hours": 672,
+    "max_fallback_age_hours": 0,
+    "availability_verified": false,
+    "planner": "deterministic",
+    "submission_sha256": "115dfe918841b4fc3a775dedd5a4b6d26338a0236688b379c7ffbd2ce9c9c4bc"
+  },
+  "html_external_scripts": []
+}

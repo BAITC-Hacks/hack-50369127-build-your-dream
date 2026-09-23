@@ -1,0 +1,4 @@
+# Optional native CatBoost worker only. Use a separate Python 3.12 environment.
+# Versions match the supplied model environment; the main application uses stdlib.
+catboost==1.2.8
+numpy==1.26.4

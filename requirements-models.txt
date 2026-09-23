@@ -1,0 +1,8 @@
+-r requirements.txt
+catboost==1.2.8
+scikit-learn==1.6.1
+scipy==1.13.1
+matplotlib==3.9.4
+plotly==6.0.1
+joblib==1.4.2
+threadpoolctl==3.5.0

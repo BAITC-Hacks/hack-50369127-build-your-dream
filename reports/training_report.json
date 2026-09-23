@@ -1,0 +1,271 @@
+{
+  "selected_model": "catboost_d4_mae",
+  "selection_metric": "December MAE",
+  "selected_spec": {
+    "name": "catboost_d4_mae",
+    "kind": "catboost",
+    "depth": 4,
+    "loss": "MAE",
+    "iterations": 887,
+    "early_stopping_rounds": 80
+  },
+  "rows": {
+    "fit": 30708,
+    "validation": 2896,
+    "january_test": 2928,
+    "final_fit": 36632
+  },
+  "boundaries": {
+    "fit": "2025-12-01 00:00:00+00:00",
+    "validation": "2026-01-01 00:00:00+00:00",
+    "test": "2026-02-01 00:00:00+00:00"
+  },
+  "january_metrics": [
+    {
+      "model": "selected_model",
+      "turbine_id": "ALL",
+      "horizon": "ALL",
+      "n": 2928,
+      "mae": 0.18603061746927146,
+      "rmse": 0.25715671703426574,
+      "bias": -0.021474253550269856,
+      "coverage": 0.9183743169398907,
+      "interval_width": 0.681737451756331
+    },
+    {
+      "model": "selected_model",
+      "turbine_id": "T1",
+      "horizon": "01-24",
+      "n": 744,
+      "mae": 0.18230797557018813,
+      "rmse": 0.2532194100757325,
+      "bias": -0.023986858819731168,
+      "coverage": 0.9193548387096774,
+      "interval_width": 0.6803071474568197
+    },
+    {
+      "model": "selected_model",
+      "turbine_id": "T1",
+      "horizon": "25-48",
+      "n": 720,
+      "mae": 0.18532512818194422,
+      "rmse": 0.25460994715938373,
+      "bias": -0.024480057607265286,
+      "coverage": 0.9194444444444444,
+      "interval_width": 0.6743954330364749
+    },
+    {
+      "model": "selected_model",
+      "turbine_id": "T2",
+      "horizon": "01-24",
+      "n": 744,
+      "mae": 0.186396238166874,
+      "rmse": 0.2590477001874985,
+      "bias": -0.018561401125873973,
+      "coverage": 0.9206989247311828,
+      "interval_width": 0.6912201455237653
+    },
+    {
+      "model": "selected_model",
+      "turbine_id": "T2",
+      "horizon": "25-48",
+      "n": 720,
+      "mae": 0.19020502866479558,
+      "rmse": 0.26172647639599955,
+      "bias": -0.01888203822004015,
+      "coverage": 0.9138888888888889,
+      "interval_width": 0.680758668026
+    },
+    {
+      "model": "historical_mean",
+      "turbine_id": "ALL",
+      "horizon": "ALL",
+      "n": 2928,
+      "mae": 0.2978443836527273,
+      "rmse": 0.33971062458513795,
+      "bias": 0.04365780582847415
+    },
+    {
+      "model": "historical_mean",
+      "turbine_id": "T1",
+      "horizon": "01-24",
+      "n": 744,
+      "mae": 0.29714150075887313,
+      "rmse": 0.3398250878848106,
+      "bias": 0.041331682550256175
+    },
+    {
+      "model": "historical_mean",
+      "turbine_id": "T1",
+      "horizon": "25-48",
+      "n": 720,
+      "mae": 0.29566839329983907,
+      "rmse": 0.33857809671179623,
+      "bias": 0.04107593284894196
+    },
+    {
+      "model": "historical_mean",
+      "turbine_id": "T2",
+      "horizon": "01-24",
+      "n": 744,
+      "mae": 0.2999377039111698,
+      "rmse": 0.3407522468166922,
+      "bias": 0.04615256416163072
+    },
+    {
+      "model": "historical_mean",
+      "turbine_id": "T2",
+      "horizon": "25-48",
+      "n": 720,
+      "mae": 0.2985835887288741,
+      "rmse": 0.33964496651565845,
+      "bias": 0.046065422584569776
+    },
+    {
+      "model": "weather_power_curve",
+      "turbine_id": "ALL",
+      "horizon": "ALL",
+      "n": 2928,
+      "mae": 0.24947718508911934,
+      "rmse": 0.2931563908201416,
+      "bias": 0.034257751598790964
+    },
+    {
+      "model": "weather_power_curve",
+      "turbine_id": "T1",
+      "horizon": "01-24",
+      "n": 744,
+      "mae": 0.24542000596591013,
+      "rmse": 0.28985286924867676,
+      "bias": 0.03129799910157426
+    },
+    {
+      "model": "weather_power_curve",
+      "turbine_id": "T1",
+      "horizon": "25-48",
+      "n": 720,
+      "mae": 0.24852998476369498,
+      "rmse": 0.29121531169626785,
+      "bias": 0.032239978830720765
+    },
+    {
+      "model": "weather_power_curve",
+      "turbine_id": "T2",
+      "horizon": "01-24",
+      "n": 744,
+      "mae": 0.2500745973707944,
+      "rmse": 0.29473670134194985,
+      "bias": 0.03621971568977492
+    },
+    {
+      "model": "weather_power_curve",
+      "turbine_id": "T2",
+      "horizon": "25-48",
+      "n": 720,
+      "mae": 0.2539994778174623,
+      "rmse": 0.2968251037559205,
+      "bias": 0.03730657238663502
+    },
+    {
+      "model": "frozen_persistence",
+      "turbine_id": "ALL",
+      "horizon": "ALL",
+      "n": 2928,
+      "mae": 0.30493112477231327,
+      "rmse": 0.454385346786532,
+      "bias": -0.30491518670309653
+    },
+    {
+      "model": "frozen_persistence",
+      "turbine_id": "T1",
+      "horizon": "01-24",
+      "n": 744,
+      "mae": 0.30602374551971323,
+      "rmse": 0.45542545704378057,
+      "bias": -0.3060058243727598
+    },
+    {
+      "model": "frozen_persistence",
+      "turbine_id": "T1",
+      "horizon": "25-48",
+      "n": 720,
+      "mae": 0.3062800925925926,
+      "rmse": 0.4546911556957109,
+      "bias": -0.306261574074074
+    },
+    {
+      "model": "frozen_persistence",
+      "turbine_id": "T2",
+      "horizon": "01-24",
+      "n": 744,
+      "mae": 0.3036693548387097,
+      "rmse": 0.4540803327893044,
+      "bias": -0.3036559139784947
+    },
+    {
+      "model": "frozen_persistence",
+      "turbine_id": "T2",
+      "horizon": "25-48",
+      "n": 720,
+      "mae": 0.30375694444444445,
+      "rmse": 0.4533172442338292,
+      "bias": -0.3037430555555556
+    }
+  ],
+  "validation_leaderboard": [
+    {
+      "model": "catboost_d4_mae",
+      "iterations": 887,
+      "mae": 0.2613337267133653,
+      "rmse": 0.35368420499126896,
+      "bias": -0.02952576507640557
+    },
+    {
+      "model": "catboost_d4_rmse",
+      "iterations": 331,
+      "mae": 0.2693805001066317,
+      "rmse": 0.3413166320302715,
+      "bias": 0.0037555637277061466
+    },
+    {
+      "model": "catboost_d6_mae",
+      "iterations": 392,
+      "mae": 0.2701323573518599,
+      "rmse": 0.3586147103325683,
+      "bias": -0.024647657002455015
+    },
+    {
+      "model": "catboost_d6_rmse",
+      "iterations": 312,
+      "mae": 0.27060390686014535,
+      "rmse": 0.34353585843260614,
+      "bias": 0.010747883027703046
+    },
+    {
+      "model": "weather_power_curve",
+      "iterations": 600,
+      "mae": 0.31676074455419456,
+      "rmse": 0.37521165149414226,
+      "bias": -0.05469672815750473
+    },
+    {
+      "model": "historical_mean",
+      "iterations": 600,
+      "mae": 0.34003576979959255,
+      "rmse": 0.39096865422124577,
+      "bias": -0.08971182779103667
+    }
+  ],
+  "target_interval_coverage": 0.8,
+  "calibration_january": {
+    "T1/01-24": 0.3099043843527775,
+    "T1/25-48": 0.3119000913065658,
+    "T2/01-24": 0.32305309676600746,
+    "T2/25-48": 0.31380977868993826
+  },
+  "dataset_sha256": "b5d390c50f864afdf1c0b9fcce92b2c9bda42c4665bf1de9d1a81520fe864a81",
+  "model_sha256": "bc536338b825e6bf829c884daa90ce9d8f8e4965aa293396c97e2e20be8c536a",
+  "final_training_asof": "2026-01-31 23:00:00+00:00",
+  "provenance_verified": false,
+  "interval_note": "Empirical residual bands; coverage measured out of time, not guaranteed under drift."
+}

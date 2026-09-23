@@ -1,0 +1,11 @@
+{
+  "timezone_offset_hours": 5,
+  "training_cutoff": "2026-01-31T23:00:00+05:00",
+  "test_start": "2026-02-01T00:00:00+05:00",
+  "test_end": "2026-03-01T00:00:00+05:00",
+  "availability_lag_hours": 12,
+  "turbines": [
+    {"id": "1", "name": "Турбина 1", "latitude": 43.6451388889, "longitude": 78.5356111111},
+    {"id": "2", "name": "Турбина 2", "latitude": 43.6431944444, "longitude": 78.5388333333}
+  ]
+}

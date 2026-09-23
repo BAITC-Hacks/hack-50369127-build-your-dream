@@ -1,0 +1,9 @@
+[project]
+name = "wind-agent-hackathon"
+version = "0.1.0"
+description = "Auditable hourly wind-power forecasting MVP"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+wind-agent = "windagent.__main__:main"

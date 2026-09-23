@@ -1,0 +1,78 @@
+project:
+  timezone: UTC
+  log_level: INFO
+paths:
+  processed: data/processed
+  features: data/features
+  cache: data/cache/weather.sqlite
+  logs: logs
+telemetry:
+  source_timezone: UTC
+  timestamp_convention: interval_start
+  interval_minutes: 10
+  min_valid_samples: 6
+  bounds:
+    power_norm: [0.0, 1.0]
+    wind_speed_ms: [0.0, 75.0]
+    temperature_c: [-80.0, 65.0]
+  columns:
+    time: Статистическое время
+    wind_speed_ms: Средняя скорость ветра(m/s)
+    power_norm: Нормализованная активная мощность
+    temperature_c: Средняя температура окружающей среды(°C)
+turbines:
+  - id: T1
+    latitude: 43.645150
+    longitude: 78.535604
+    coordinates_source: https://maps.app.goo.gl/iN6svMt69D5qRpFU9
+    telemetry_file: data/raw/turbine_1.csv
+  - id: T2
+    latitude: 43.643198
+    longitude: 78.538828
+    coordinates_source: https://maps.app.goo.gl/8UQMwsYavY6nLvFY8
+    telemetry_file: data/raw/turbine_2.csv
+weather:
+  endpoint: https://single-runs-api.open-meteo.com/v1/forecast
+  model: ecmwf_ifs
+  archive_start: '2024-03-14T00:00:00Z'
+  variables:
+    - wind_speed_10m
+    - wind_speed_100m
+    - wind_direction_10m
+    - wind_direction_100m
+    - temperature_2m
+    - surface_pressure
+  connect_timeout_seconds: 10
+  read_timeout_seconds: 90
+  retries: 4
+  backoff_seconds: 1.0
+  run_cycle_hours: 6
+  availability_delay_hours: 8
+  availability_policy: assumed_delay
+  availability_csv: null
+  require_verified_availability: false
+dataset:
+  issue_start_date: '2026-01-31'
+  issue_end_date: '2026-02-28'
+  issue_hour_utc: 23
+  horizon_hours: 48
+  label_cutoff_exclusive: '2026-02-01T00:00:00Z'
+  evaluation_start: '2026-02-01T00:00:00Z'
+  evaluation_end_exclusive: '2026-03-01T00:00:00Z'
+training:
+  dataset: data/features/dataset_20241231_20260228.csv
+  fit_end_exclusive: '2025-12-01T00:00:00Z'
+  validation_end_exclusive: '2026-01-01T00:00:00Z'
+  test_end_exclusive: '2026-02-01T00:00:00Z'
+  random_seed: 42
+  thread_count: 4
+  iterations: 900
+  early_stopping_rounds: 80
+  depths: [4, 6]
+  interval_coverage: 0.8
+agent:
+  fallback_max_age_hours: 12
+  ramp_threshold: 0.25
+  wide_interval_threshold: 0.6
+  allow_fallback: true
+  strict_provenance: false

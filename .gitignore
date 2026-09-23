@@ -1,0 +1,40 @@
+# Local Python environments and build products
+.venv*/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+catboost_info/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime files; committed SQLite snapshots support offline reproduction
+logs/*
+!logs/.gitkeep
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.tmp
+*.lock
+
+# Editor and operating system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Distribution archives are created outside the repository
+*.zip
+*.bundle

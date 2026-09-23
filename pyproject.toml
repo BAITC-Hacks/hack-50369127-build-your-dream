@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wind-power-forecast"
+version = "0.1.0"
+description = "Reproducible wind turbine power forecasting pipeline."
+requires-python = ">=3.11,<3.15"
+dependencies = [
+  "numpy>=1.26,<3",
+  "pandas>=2.2,<3",
+  "scikit-learn>=1.5,<2",
+  "tzdata>=2024.1"
+]
+
+[project.optional-dependencies]
+gfs = ["eccodes>=2.39,<3"]
+dev = [
+  "pytest>=8,<9",
+  "ruff>=0.6,<1"
+]
+modeling = [
+  "lightgbm>=4.5,<5",
+  "catboost>=1.2,<2"
+]
+
+[project.scripts]
+wind-power-forecast = "wind_power_forecast.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

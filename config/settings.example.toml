@@ -1,0 +1,58 @@
+[project]
+# Unconfirmed telemetry timezone; confirm with the data owner.
+timezone = "Asia/Almaty"
+daily_calculation_hour_local = 23
+horizon_hours = 48
+training_end_date = "2026-01-31"
+test_start_date = "2026-02-01"
+test_end_date = "2026-02-28"
+
+[data]
+turbine_1_csv = "data/raw/turbine_1.csv"
+timestamp_column = "Статистическое время"
+wind_speed_column = "Средняя скорость ветра(m/s)"
+target_column = "Нормализованная активная мощность"
+temperature_column = "Средняя температура окружающей среды(°C)"
+expected_step_minutes = 10
+hourly_output_csv = "data/processed/turbine_1_hourly.csv"
+
+[weather]
+provider = "noaa-gfs"
+require_as_issued = true
+endpoint = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
+model = "gfs_0p25"
+forecast_hours = 168
+timezone = "UTC"
+# Legacy UTC helper only; forecast-day uses project.daily_calculation_hour_local.
+daily_calculation_hour_utc = 18
+# Conservative assumed publication delay, not verified historical release timestamps.
+model_latency_hours = 8
+wind_speed_variable = "wind_speed_100m"
+temperature_variable = "temperature_2m"
+hourly_variables = ["wind_speed_100m", "temperature_2m"]
+retry_attempts = 3
+retry_backoff_seconds = 1.0
+fallback_runs = 8
+request_timeout_seconds = 30
+
+[outputs]
+forecast_dir = "data/processed/gfs_forecasts"
+weather_dir = "data/external/weather"
+run_log_dir = "reports/gfs_runs"
+
+[[turbines]]
+id = "turbine_1"
+latitude = 43.645150
+longitude = 78.535604
+data_csv = "data/raw/turbine_1.csv"
+weight = 1.0
+model_source = "self"
+# Set capacity_mw for BOTH turbines only when their nominal capacities are known.
+
+[[turbines]]
+id = "turbine_2"
+latitude = 43.643198
+longitude = 78.538828
+data_csv = "data/raw/turbine_2.csv"
+weight = 1.0
+model_source = "self"

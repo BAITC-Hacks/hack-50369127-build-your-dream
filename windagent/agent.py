@@ -55,6 +55,10 @@ class ForecastAgent:
         if received != expected:
             raise ValueError(f"CSV должен содержать турбины {', '.join(sorted(expected))}; получено: {', '.join(sorted(received))}.")
         model = train_models(rows, utc(self.config["training_cutoff"]))
+        report["excluded_after_cutoff"] = model["excluded_future_rows"]
+        report["training_rows"] = model["training_rows"]
+        if model["excluded_future_rows"]:
+            report["warnings"].append(f"Из обучения исключено {model['excluded_future_rows']} строк, недоступных к отсечке {self.config['training_cutoff']}.")
         self.state.update({"dataset": {"source": Path(filename).name, "demo": demo,
             "rows": len(rows), "turbines": sorted(received), "report": report, "sha256": identifier,
             "path": str(path), "timezone_offset_hours": timezone_offset_hours, "power_scale": power_scale,

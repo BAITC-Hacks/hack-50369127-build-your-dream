@@ -103,6 +103,18 @@ def _download(url: str) -> bytes:
     raise WeatherError("Archived weather request failed")
 
 
+def _preserve_snapshot(raw: bytes, cache_dir: Path) -> None:
+    """Keep earlier source bytes available after a refresh changes the response."""
+    directory = cache_dir / "raw"
+    directory.mkdir(parents=True, exist_ok=True)
+    snapshot = directory / (hashlib.sha256(raw).hexdigest() + ".json")
+    if snapshot.exists():
+        if snapshot.read_bytes() != raw:
+            raise WeatherError("Immutable weather snapshot integrity check failed")
+    else:
+        _atomic_write(snapshot, raw)
+
+
 def _response(url: str, cache_dir: Path, refresh: bool) -> tuple[bytes, str, bool]:
     key = hashlib.sha256(url.encode("utf-8")).hexdigest()
     raw_path = cache_dir / (key + ".json")
@@ -122,12 +134,14 @@ def _response(url: str, cache_dir: Path, refresh: bool) -> tuple[bytes, str, boo
             retrieved = datetime.fromisoformat(meta["retrieved_at"].replace("Z", "+00:00"))
             if retrieved.tzinfo is None:
                 raise WeatherError("Weather cache has an invalid retrieval timestamp")
+            _preserve_snapshot(raw, cache_dir)
             return raw, _iso(retrieved), True
         raw = _download(url)
         # Reject API errors / malformed JSON before making them persistent.
         _decode(raw)
         retrieved_at = _iso(datetime.now(UTC))
         meta = {"url": url, "sha256": hashlib.sha256(raw).hexdigest(), "retrieved_at": retrieved_at}
+        _preserve_snapshot(raw, cache_dir)
         _atomic_write(raw_path, raw)
         _atomic_write(meta_path, json.dumps(meta, indent=2, ensure_ascii=False).encode("utf-8"))
         return raw, retrieved_at, False
@@ -234,6 +248,7 @@ def fetch_weather(as_of: datetime, targets: list[dict], hours: int, cache_dir: P
             "availability_lag_hours": availability_lag_hours,
             "competition_ready": False, "operational_run_verified": False,
             "url": url, "sha256": hashlib.sha256(raw).hexdigest(), "retrieved_at": retrieved_at,
+            "raw_path": str(Path(cache_dir) / "raw" / (hashlib.sha256(raw).hexdigest() + ".json")),
             "cache_hit": cache_hit, "wind_height_m": 100, "temperature_height_m": 2,
             "requested_latitude": latitude, "requested_longitude": longitude,
             "grid_latitude": payload.get("latitude"), "grid_longitude": payload.get("longitude"),

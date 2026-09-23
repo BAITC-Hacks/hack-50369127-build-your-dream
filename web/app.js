@@ -5,9 +5,9 @@ const all = (selector) => [...document.querySelectorAll(selector)];
 const app = { state: { dataset: null, model: null, last_run: null, backtest: null }, hours: 48, busy: false, showAllRows: false, view: "overview" };
 const numberFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 });
 const integerFormat = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
-const dateFormat = new Intl.DateTimeFormat("ru-RU", { timeZone: "Etc/GMT-5", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-const shortDateFormat = new Intl.DateTimeFormat("ru-RU", { timeZone: "Etc/GMT-5", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-const timeFormat = new Intl.DateTimeFormat("ru-RU", { timeZone: "Etc/GMT-5", hour: "2-digit", minute: "2-digit" });
+const dateFormat = new Intl.DateTimeFormat("ru-RU", { timeZone: "UTC", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+const shortDateFormat = new Intl.DateTimeFormat("ru-RU", { timeZone: "UTC", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+const timeFormat = new Intl.DateTimeFormat("ru-RU", { timeZone: "UTC", hour: "2-digit", minute: "2-digit" });
 const stages = [
   { keys: ["weather", "fetch", "weather_fetch", "retrieve_weather"], title: "Получение погоды", note: "Прогноз по координатам ВЭС" },
   { keys: ["prepare", "preparation", "data", "prepare_data", "validate"], title: "Подготовка данных", note: "Проверка и сбор признаков" },
@@ -31,6 +31,10 @@ const reportLabels = {
   min_power: "Минимум нормализованной мощности", mean_wind_speed: "Средний ветер, м/с",
   stale: "Устарел", reused: "Использован кэш", calibration_rows: "Строк для диапазона",
   cutoff: "Отсечка", first_timestamp: "Первая отметка времени", last_timestamp: "Последняя отметка времени",
+  input_rows: "Исходных строк", hours_complete: "Полных часов", hours_total: "Всего часов", hours_target_usable: "Пригодных часов",
+  missing_10min_slots: "Пропущено 10-минутных интервалов", hours_without_readings: "Часов без наблюдений",
+  exact_duplicates_removed: "Удалено точных дублей", source_timezone: "Часовой пояс источника", timestamp_convention: "Положение временной метки",
+  min_valid_samples: "Минимум отсчётов в часе", turbines: "Турбины", raw_rows: "Исходных записей",
 };
 
 function escapeHTML(value) {
@@ -39,9 +43,23 @@ function escapeHTML(value) {
 function icon(name) { return '<svg aria-hidden="true"><use href="#i-' + name + '"/></svg>'; }
 function finite(value) { return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)); }
 function n(value, integer = false) { return finite(value) ? (integer ? integerFormat : numberFormat).format(Number(value)) : "—"; }
+function timezoneOffset() {
+  const offset = Number(app.state.config?.timezone_offset_hours ?? 5);
+  return Number.isFinite(offset) && Math.abs(offset) <= 14 ? offset : 5;
+}
+function timezoneLabel() { const offset = timezoneOffset(); return offset === 0 ? "UTC" : "UTC" + (offset > 0 ? "+" : "−") + Math.abs(offset); }
+function timezoneSuffix() {
+  const offset = Math.round(timezoneOffset() * 60);
+  return (offset < 0 ? "-" : "+") + String(Math.floor(Math.abs(offset) / 60)).padStart(2, "0") + ":" + String(Math.abs(offset) % 60).padStart(2, "0");
+}
+function displayDate(value) { return new Date(new Date(value).getTime() + timezoneOffset() * 3600000); }
+function isProject() { return app.state.dataset?.kind === "project_archive"; }
+function isProjectModel() { return app.state.model?.kind === "catboost_archive"; }
+function executionOf(run) { return run?.execution || run?.engine?.execution || run?.status?.execution || ""; }
+function isSavedArchive(run = app.state.last_run) { return executionOf(run) === "saved_archive"; }
 function fmtDate(value, short = false) {
   if (!value) return "—";
-  const date = new Date(value);
+  const date = displayDate(value);
   return Number.isNaN(date.getTime()) ? String(value) : (short ? shortDateFormat : dateFormat).format(date);
 }
 function mean(values) {
@@ -140,20 +158,30 @@ async function withBusy(button, label, action) {
   }
 }
 async function loadState(initialize = false) {
+  const previousKind = app.state.dataset?.kind;
   app.state = await api("/api/state");
+  const datasetChanged = previousKind !== app.state.dataset?.kind;
   if (initialize && app.state.last_run) {
     const run = app.state.last_run;
     if (run.as_of) {
-      const shifted = new Date(new Date(run.as_of).getTime() + 5 * 3600000);
+      const shifted = displayDate(run.as_of);
       if (!Number.isNaN(shifted.getTime())) $("as-of").value = shifted.toISOString().slice(0, 16);
     }
     if ([24, 48].includes(Number(run.hours))) app.hours = Number(run.hours);
-    $("weather-mode").value = run.mode === "demo" ? "demo" : "archive";
-  } else if (initialize && app.state.dataset?.demo) {
-    $("weather-mode").value = "demo";
+    $("weather-mode").value = isProject() ? "project" : run.mode === "demo" ? "demo" : "archive";
+  } else if (initialize || datasetChanged) {
+    $("weather-mode").value = isProject() ? "project" : app.state.dataset?.demo ? "demo" : "archive";
+    const cutoff = app.state.config?.training_cutoff;
+    if (cutoff) {
+      const shifted = displayDate(cutoff);
+      if (!Number.isNaN(shifted.getTime())) $("as-of").value = shifted.toISOString().slice(0, 16);
+    }
+  }
+  if (initialize || datasetChanged) {
+    $("data-timezone").value = String(timezoneOffset());
   }
   render();
-  if (initialize && app.state.last_run?.mode === "archive") resultNotice(app.state.last_run);
+  if (initialize && app.state.last_run && ["archive", "project"].includes(app.state.last_run.mode)) resultNotice(app.state.last_run);
 }
 function selectedRows() {
   const rows = app.state.last_run?.rows || [];
@@ -172,10 +200,13 @@ function selectedRows() {
 }
 function render() {
   const { dataset, config, last_run: run } = app.state;
+  all("[data-display-timezone]").forEach((element) => { element.textContent = timezoneLabel(); });
+  const projectOption = $("weather-mode").querySelector('option[value="project"]');
+  if (projectOption) { projectOption.hidden = !isProject(); projectOption.disabled = !isProject(); }
   $("welcome-card").hidden = Boolean(dataset);
   const badge = $("environment-badge");
   badge.className = "badge " + (!dataset ? "neutral" : dataset.demo || run?.mode === "demo" ? "demo" : "");
-  badge.innerHTML = '<span class="dot"></span>' + (!dataset ? "Ожидание данных" : dataset.demo || run?.mode === "demo" ? "Синтетическое демо" : "Данные загружены");
+  badge.innerHTML = '<span class="dot"></span>' + (!dataset ? "Ожидание данных" : dataset.demo || run?.mode === "demo" ? "Синтетическое демо" : isProject() ? "Реальные данные · архив проекта" : "Данные загружены");
   const turbines = config?.turbines || [];
   if (turbines.length) {
     $("station-coordinates").textContent = Number(turbines[0].latitude).toFixed(4) + "° N, " + Number(turbines[0].longitude).toFixed(4) + "° E";
@@ -207,10 +238,10 @@ function renderForecast() {
   $("metric-hours").innerHTML = n(run?.hours || app.hours, true) + "<small>часов</small>";
   $("metric-data").innerHTML = n(app.state.model?.training_rows ?? dataset?.rows ?? dataset?.report?.accepted_rows, true) + "<small>строк</small>";
   $("metric-power-note").textContent = selected === "farm" ? "Среднее двух турбин · равные веса" : "Нормализованная мощность турбины";
-  $("metric-wind-note").textContent = run ? (run.mode === "demo" ? "Синтетическая погодная траектория" : "Архивный погодный прогноз") : "Из выбранного погодного прогноза";
-  $("metric-data-note").textContent = !dataset ? "Исторические данные не загружены" : dataset.demo ? "Синтетическая история · демо" : "Загруженная история станции";
-  $("metric-hours-note").textContent = run ? "Расчёт на " + fmtDate(run.as_of) + " UTC+5" : "Почасовой шаг · 2 турбины";
-  $("chart-period").textContent = rows.length ? fmtDate(rows[0].valid_time) + " — " + fmtDate(rows[rows.length - 1].valid_time) + " · UTC+5" : "Подготовьте данные, чтобы увидеть прогноз";
+  $("metric-wind-note").textContent = run ? (run.mode === "demo" ? "Синтетическая погодная траектория" : run.mode === "project" ? "Кеш проекта · ECMWF" : "Архивный погодный прогноз") : "Из выбранного погодного прогноза";
+  $("metric-data-note").textContent = !dataset ? "Исторические данные не загружены" : dataset.demo ? "Синтетическая история · демо" : isProjectModel() ? "Обучающая выборка CatBoost из проекта" : "Загруженная история станции";
+  $("metric-hours-note").textContent = run ? "Выпуск на " + fmtDate(run.as_of) + " " + timezoneLabel() : "Почасовой шаг · 2 турбины";
+  $("chart-period").textContent = rows.length ? fmtDate(rows[0].valid_time) + " — " + fmtDate(rows[rows.length - 1].valid_time) + " · " + timezoneLabel() + (isSavedArchive(run) ? " · сохранённый расчёт" : "") : "Подготовьте данные, чтобы увидеть прогноз";
   $("chart-empty").hidden = rows.length > 0;
   $("chart-caption").textContent = selected === "farm" ? "Среднее нормализованной мощности. Диапазон — среднее границ турбин." : "Эмпирический диапазон модели; не гарантированный доверительный интервал.";
   if (!rows.length) $("chart-caption").textContent = "Мощность нормализована от 0 до 100%. Это не энергия в МВт·ч.";
@@ -236,7 +267,7 @@ function renderChart(rows) {
     svg += '<path d="' + line + '" fill="none" stroke="#429778" stroke-width="2.5" vector-effect="non-scaling-stroke"/>';
     const ticks = [...new Set([0, ...[1, 2, 3, 4, 5].map((i) => Math.round(i * (rows.length - 1) / 5))])];
     ticks.forEach((i) => {
-      const date = new Date(rows[i].valid_time);
+      const date = displayDate(rows[i].valid_time);
       const label = Number.isNaN(date.getTime()) ? "" : timeFormat.format(date);
       svg += '<text x="' + x(i) + '" y="' + (height - 13) + '" text-anchor="middle" fill="#9ca997" stroke="none" font-size="9" font-family="inherit">' + escapeHTML(label) + "</text>";
     });
@@ -287,10 +318,19 @@ function renderTable(rows = selectedRows()) {
   $("table-description").textContent = $("turbine-select").value === "farm" ? "Арифметическое среднее двух турбин · CSV содержит обе турбины" : $("turbine-select").selectedOptions[0].textContent + " · CSV содержит обе турбины";
 }
 function renderPipeline() {
-  const events = app.state.last_run?.events || [];
+  const run = app.state.last_run;
+  const saved = isSavedArchive(run);
+  const events = saved ? [] : run?.events || [];
+  const shownStages = saved ? [
+    { title: "Архив проекта", note: "Источник — импортированный проект" },
+    { title: "Погодные данные", note: "Сведения о выпуске взяты из архива" },
+    { title: "Сохранённый прогноз", note: "Модель в этом запросе не запускалась" },
+    { title: "Ограничения", note: "Доступность погоды требует подтверждения" },
+    { title: "Экспорт результата", note: "Архивные значения доступны в CSV" },
+  ] : stages;
   let used = new Set();
-  $("pipeline-list").innerHTML = stages.map((stage, index) => {
-    let event = events.find((e, i) => !used.has(i) && stage.keys.includes(String(e.stage).toLowerCase()));
+  $("pipeline-list").innerHTML = shownStages.map((stage, index) => {
+    let event = events.find((e, i) => !used.has(i) && stage.keys?.includes(String(e.stage).toLowerCase()));
     if (event) used.add(events.indexOf(event));
     const status = String(event?.status || "").toLowerCase();
     const failed = ["error", "failed", "failure"].includes(status);
@@ -298,10 +338,12 @@ function renderPipeline() {
     const message = event ? safeText(event.message || event.stage) : stage.note;
     return '<li class="' + (failed ? "failed" : done ? "done" : "") + '" title="' + escapeHTML(message) + '"><span class="stage-icon">' + (done ? icon("check") : failed ? icon("info") : String(index + 1).padStart(2, "0")) + '</span><div><h3>' + stage.title + "</h3><p>" + escapeHTML(message) + "</p></div></li>";
   }).join("");
-  const hasRun = Boolean(app.state.last_run);
-  $("agent-status").textContent = app.busy ? "РАБОТАЕТ" : hasRun ? app.state.last_run.reused ? "ИЗ КЭША" : "ЗАВЕРШЁН" : "ОЖИДАНИЕ";
+  const hasRun = Boolean(run);
+  $("agent-title").innerHTML = '<span class="live-dot"></span>' + (saved ? "Архивный расчёт" : "Журнал агента");
+  $("agent-subtitle").textContent = saved ? "Сохранённый расчёт из архива" : "Прозрачный цикл прогнозирования";
+  $("agent-status").textContent = app.busy ? "РАБОТАЕТ" : saved ? "ИЗ АРХИВА" : hasRun ? run.reused ? "ИЗ КЭША" : "ЗАВЕРШЁН" : "ОЖИДАНИЕ";
   $("agent-status").className = "tiny-badge" + (app.busy ? " running" : "");
-  $("agent-footer-text").innerHTML = hasRun && app.state.last_run.mode === "demo" ? "Демонстрационный цикл<br>на синтетических данных" : "Контроль времени выпуска<br>и происхождения погоды";
+  $("agent-footer-text").innerHTML = saved ? "Модель повторно не запускалась.<br>Показан результат из архива." : hasRun && run.mode === "demo" ? "Демонстрационный цикл<br>на синтетических данных" : "Контроль времени выпуска<br>и происхождения погоды";
 }
 function renderSources() {
   const { dataset, last_run: run, model } = app.state;
@@ -313,13 +355,14 @@ function renderSources() {
   const modelNames = { empirical_curve: "Эмпирическая кривая", constant: "Постоянный прогноз", persistence: "Последняя мощность" };
   const kinds = [...new Set(Object.values(model?.diagnostics || {}).map((d) => modelNames[d.selected_kind] || d.selected_kind).filter(Boolean))];
   html += sourceRow("Модель", model ? model.name || model.model_type || model.method || kinds.join(" / ") || "Обучена на загруженной истории" : "Не обучена");
-  html += sourceRow("Момент прогноза", run ? fmtDate(run.as_of) + " UTC+5" : "—");
+  html += sourceRow("Момент прогноза", run ? fmtDate(run.as_of) + " " + timezoneLabel() : "—");
   const issue = first.issue_time || first.issued_at || first.run_time || first.model_run || first.init_time;
-  if (issue) html += sourceRow("Выпуск погоды", fmtDate(issue) + " UTC+5");
-  if (run?.mode === "archive") html += sourceRow("Доступность в прошлом", '<span class="tag warning">Требует подтверждения</span>', true);
+  if (issue) html += sourceRow("Выпуск погоды", fmtDate(issue) + " " + timezoneLabel());
+  if (["archive", "project"].includes(run?.mode)) html += sourceRow("Доступность в прошлом", '<span class="tag warning">Требует подтверждения</span>', true);
+  if (run?.mode === "project" || isSavedArchive(run)) html += sourceRow("Получение результата", isSavedArchive(run) ? "Сохранённый расчёт из архива" : executionOf(run) === "recomputed" ? "Модель выполнена заново" : "Результат проекта");
   if (run?.id) html += sourceRow("Идентификатор", run.id);
   if (provenance.length) {
-    html += '<details class="model-details"><summary>Источники по каждой турбине</summary>' + provenance.map((p) => '<div class="provenance-item">' + sourceRow("Турбина", p.turbine_id) + sourceRow("Источник", p.source || p.provider || "—") + sourceRow("Выпуск", fmtDate(p.run_time || p.issue_time) + " UTC+5") + sourceRow("Доступность по метаданным", fmtDate(p.available_at) + " UTC+5") + sourceRow("Основание доступности", p.availability_basis || "Не указано") + sourceRow("Версия данных", p.sha256 || "Не указана") + '</div>').join("") + "</details>";
+    html += '<details class="model-details"><summary>Источники по каждой турбине</summary>' + provenance.map((p) => '<div class="provenance-item">' + sourceRow("Турбина", p.turbine_id) + sourceRow("Источник", p.source || p.provider || "—") + sourceRow("Выпуск", fmtDate(p.run_time || p.issue_time) + " " + timezoneLabel()) + sourceRow("Доступность по метаданным", fmtDate(p.available_at) + " " + timezoneLabel()) + sourceRow("Основание доступности", p.availability_basis || "Не указано") + sourceRow("Версия данных", p.sha256 || p.weather_sha256 || "Не указана") + '</div>').join("") + "</details>";
   }
   $("source-details").innerHTML = html;
 }
@@ -334,9 +377,10 @@ function renderAnalysis() {
   const uniqueHours = new Set(runRows.map((r) => r.valid_time)).size;
   const turbines = new Set(runRows.map((r) => String(r.turbine_id))).size;
   const fullCoverage = uniqueHours === Number(run.hours) && turbines === 2 && runRows.length === Number(run.hours) * 2;
-  let html = note("Получено " + uniqueHours + " часов, турбин: " + turbines + ". " + (fullCoverage ? "Горизонт заполнен полностью." : "Проверьте полноту горизонта и наличие обеих турбин."), !fullCoverage);
+  let html = isSavedArchive(run) ? note("Сохранённый расчёт из архива. Показаны готовые прогнозные значения; модель в этом запросе не запускалась.", true) : run.mode === "project" && executionOf(run) === "recomputed" ? note("CatBoost выполнен заново на погодных признаках из кеша проекта.") : "";
+  html += note("Получено " + uniqueHours + " часов, турбин: " + turbines + ". " + (fullCoverage ? "Горизонт заполнен полностью." : "Проверьте полноту горизонта и наличие обеих турбин."), !fullCoverage);
   if (run.mode === "demo" || app.state.dataset?.demo) html += note("Синтетическое демо. Эти результаты не оценивают реальную выработку ВЭС за февраль.", true);
-  if (run.mode === "archive") html += note("Архив: доступность требует подтверждения. Время фактической публикации запусков не подтверждено; результат не готов для конкурсной оценки.", true);
+  if (["archive", "project"].includes(run.mode)) html += note("Архив: доступность требует подтверждения. Время фактической публикации запусков не подтверждено; результат не готов для конкурсной оценки.", true);
   if (run.eligibility?.reason) html += note(run.eligibility.reason, run.eligibility.competition_ready !== true);
   const warnings = [...new Set((run.warnings || []).map(safeText))];
   html += warnings.map((warning) => note(warning, true)).join("");
@@ -360,6 +404,33 @@ function reportItems(report, depth = 0) {
   });
   return items;
 }
+function renderProjectModel(model) {
+  const metrics = Array.isArray(model.january_metrics) ? model.january_metrics : [];
+  let html = '<div class="project-model-section"><h3 class="diagnostic-title">Модель из проекта</h3>';
+  html += sourceRow("Модель", model.name || "CatBoost");
+  html += sourceRow("Строк обучения", n(model.training_rows, true));
+  if (model.training_cutoff) html += sourceRow("Отсечка обучения", fmtDate(model.training_cutoff) + " " + timezoneLabel());
+  html += '<p class="small-muted model-context">Импортирована модель CatBoost. Повторное обучение при подключении архива не выполняется; способ получения каждого прогноза указан рядом с результатом.</p>';
+  if (metrics.length) {
+    html += '<h3 class="diagnostic-title">Январь 2026 · проверка погодного прогноза</h3>';
+    html += '<p class="small-muted">MAE и RMSE приведены в процентных пунктах нормализованной мощности. Это отдельная проверка по январским прогнозам, не оценка февральской выработки.</p>';
+    html += note(model.independently_verified_metrics ? "Январские метрики независимо пересчитаны по сохранённым прогнозам и фактической мощности." : model.imported_report ? "Метрики импортированы из отчёта проекта. Независимый пересчёт метрик не подтверждён." : "Показаны январские метрики, сохранённые в проекте.", !model.independently_verified_metrics);
+    html += '<div class="table-scroll"><table class="diagnostic-table"><thead><tr><th>Модель</th><th>Турбина</th><th>Горизонт</th><th>Строк</th><th>MAE, п. п.</th><th>RMSE, п. п.</th></tr></thead><tbody>';
+    const modelNames = { catboost: "CatBoost", catboost_global: "CatBoost", physics: "Физическая модель", power_curve: "Кривая мощности", persistence: "Последняя мощность", constant: "Средняя мощность" };
+    for (const metric of metrics) {
+      const factor = ["percentage_points", "percent", "pct"].includes(metric.unit || model.metrics_unit) ? 1 : 100;
+      const horizon = metric.horizon ?? metric.horizon_hours;
+      html += '<tr><td>' + escapeHTML(modelNames[metric.model] || metric.model || "CatBoost") + '</td><td>' + escapeHTML(metric.turbine_id ?? metric.turbine ?? "—") + '</td><td>' + escapeHTML(finite(horizon) ? n(horizon, true) + " ч" : safeText(horizon)) + '</td><td>' + n(metric.n ?? metric.rows, true) + '</td><td>' + (finite(metric.mae) ? n(Number(metric.mae) * factor) : "—") + '</td><td>' + (finite(metric.rmse) ? n(Number(metric.rmse) * factor) : "—") + '</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  } else {
+    html += note("В импортированном состоянии нет январских метрик модели. Числовая оценка качества не показывается.", true);
+  }
+  if (model.validation) html += note(safeText(model.validation));
+  if (model.interval?.description) html += note(model.interval.description, !model.interval.calibrated);
+  html += (model.warnings || []).map((warning) => note(safeText(warning), true)).join("");
+  return html + '</div>';
+}
 function renderDataset() {
   const { dataset, model } = app.state;
   if (!dataset) {
@@ -367,12 +438,16 @@ function renderDataset() {
     return;
   }
   const turbineCount = Array.isArray(dataset.turbines) ? dataset.turbines.length : typeof dataset.turbines === "object" && dataset.turbines ? Object.keys(dataset.turbines).length : dataset.turbines || 2;
-  let html = '<div class="data-section-title"><span>' + escapeHTML(dataset.source || "История станции") + '</span><span class="badge' + (dataset.demo ? " demo" : "") + '">' + (dataset.demo ? "Синтетическое демо" : "Загруженный CSV") + "</span></div>";
-  html += '<div class="data-stats"><div class="data-stat"><span>Строк данных</span><strong>' + n(dataset.rows, true) + '</strong></div><div class="data-stat"><span>Турбин</span><strong>' + n(turbineCount, true) + '</strong></div><div class="data-stat"><span>Модель</span><strong style="font-size:18px">' + (model ? "Обучена" : "Не обучена") + "</strong></div></div>";
+  let html = '<div class="data-section-title"><span>' + escapeHTML(dataset.source || "История станции") + '</span><span class="badge' + (dataset.demo ? " demo" : "") + '">' + (dataset.demo ? "Синтетическое демо" : isProject() ? "Реальные данные · архив проекта" : "Загруженный CSV") + "</span></div>";
+  html += '<div class="data-stats"><div class="data-stat"><span>Строк данных</span><strong>' + n(dataset.rows, true) + '</strong></div><div class="data-stat"><span>Турбин</span><strong>' + n(turbineCount, true) + '</strong></div><div class="data-stat"><span>Модель</span><strong style="font-size:18px">' + (isProjectModel() ? "Импортирована" : model ? "Обучена" : "Не обучена") + "</strong></div></div>";
   if (dataset.demo) html += note("История создана программно. Для реального прогноза импортируйте статистику вашей ВЭС.", true);
+  if (isProject()) html += note("Реальная телеметрия и модель импортированы из проекта. Время отображается в " + timezoneLabel() + "; часовой пояс исходной телеметрии принят из конфигурации архива и требует подтверждения.", true);
+  html += (dataset.warnings || []).map((warning) => note(safeText(warning), true)).join("");
   const report = reportItems(dataset.report);
   if (report.length) html += '<h3 style="font-size:12px;margin-top:22px">Проверка исходных данных</h3><ul class="report-list">' + report.map((line) => "<li>" + escapeHTML(line) + "</li>").join("") + "</ul>";
-  if (model) {
+  if (isProjectModel()) {
+    html += renderProjectModel(model);
+  } else if (model) {
     const modelNames = { empirical_curve: "Эмпирическая кривая", constant: "Постоянный прогноз", persistence: "Последняя мощность" };
     html += '<details class="model-details" open><summary>Диагностика модели</summary>';
     html += '<p class="small-muted">Ошибки рассчитаны на исторической валидации, в процентных пунктах нормализованной мощности. Это не точность прогноза за февраль.</p>';

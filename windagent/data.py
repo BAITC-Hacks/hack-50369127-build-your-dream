@@ -36,7 +36,7 @@ _ALIASES = {
     "wind_speed": (
         "wind_speed", "wind speed", "wind_speed_ms", "windspeed",
         "средняя скорость ветра, м/с", "средняя скорость ветра",
-        "скорость ветра", "скорость ветра м/с",
+        "скорость ветра", "скорость ветра м/с", "Средняя скорость ветра(m/s)",
     ),
     "temperature": (
         "temperature", "temperature_c", "ambient_temperature", "temp",
@@ -48,7 +48,7 @@ _ALIASES = {
         "power", "normalized_power", "active_power", "power_normalized",
         "нормализированная активная мощность на стороне линии",
         "нормализированная активная мощность", "нормализованная мощность",
-        "активная мощность", "мощность",
+        "активная мощность", "мощность", "Нормализованная активная мощность",
     ),
 }
 
@@ -66,7 +66,7 @@ def _timestamp(value: str, fixed_tz: timezone | None) -> tuple[datetime, bool]:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         parsed = None
-        for fmt in ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M"):
             try:
                 parsed = datetime.strptime(value, fmt)
                 break
@@ -92,6 +92,15 @@ def _number(value: str | None, name: str) -> float:
     if not math.isfinite(result):
         raise ValueError(f"поле {name}: NaN и бесконечность запрещены")
     return result
+
+
+def _positive_count(value: str | None) -> int:
+    if value is None or not re.fullmatch(r"[0-9]+", value.strip()):
+        raise ValueError("sample_count должен быть положительным целым числом")
+    count = int(value.strip())
+    if count < 1:
+        raise ValueError("sample_count должен быть положительным целым числом")
+    return count
 
 
 def _resolve_columns(headers: list[str], mapping: dict | None) -> dict[str, str]:
@@ -138,7 +147,9 @@ def load_history(
     latest contributing sample timestamp, preventing a partial future hour
     from entering training before all its samples were observed. Existing
     exact hourly labels are assumed available at their label time. Measurement
-    publishing delays cannot be inferred from this CSV.
+    publishing delays cannot be inferred from this CSV. Optional canonical
+    ``available_at`` and ``sample_count`` columns preserve prior aggregation
+    metadata; combined means are weighted by their sample counts.
     """
     try:
         power_scale = float(power_scale)
@@ -157,7 +168,7 @@ def load_history(
         fixed_tz = timezone(timedelta(hours=offset))
 
     unique: dict[tuple[str, datetime], dict] = {}
-    raw_count = naive_count = duplicate_count = subhourly_count = 0
+    raw_count = naive_count = duplicate_count = subhourly_count = naive_availability_count = 0
     with Path(path).open("r", encoding="utf-8-sig", newline="") as handle:
         sample = handle.read(16384)
         if not sample.strip():
@@ -176,6 +187,8 @@ def load_history(
         if reader.fieldnames is None:
             raise ValueError("CSV не содержит заголовка.")
         columns = _resolve_columns(reader.fieldnames, column_mapping)
+        has_availability = "available_at" in reader.fieldnames
+        has_sample_count = "sample_count" in reader.fieldnames
         delimiter = reader.reader.dialect.delimiter
         try:
             for record in reader:
@@ -189,6 +202,16 @@ def load_history(
                         raise ValueError("пропущено поле timestamp")
                     timestamp, naive = _timestamp(raw_time, fixed_tz)
                     naive_count += int(naive)
+                    available_at = timestamp
+                    if has_availability:
+                        raw_available = record.get("available_at")
+                        if not raw_available or not raw_available.strip():
+                            raise ValueError("пропущено поле available_at")
+                        available_at, naive_available = _timestamp(raw_available, fixed_tz)
+                        naive_availability_count += int(naive_available)
+                        if available_at < timestamp:
+                            raise ValueError("available_at не может предшествовать timestamp")
+                    sample_count = _positive_count(record.get("sample_count")) if has_sample_count else 1
                     turbine_id = record[columns["turbine_id"]].strip()
                     if not turbine_id:
                         raise ValueError("пропущено поле turbine_id")
@@ -204,12 +227,14 @@ def load_history(
                             "нормализованная power вне диапазона [0, 1]; "
                             "проверьте power_scale (явный делитель исходной мощности)"
                         )
-                    row = {"timestamp": timestamp, "turbine_id": turbine_id,
+                    row = {"timestamp": timestamp, "available_at": available_at,
+                           "sample_count": sample_count, "turbine_id": turbine_id,
                            "wind_speed": wind, "temperature": temperature, "power": power}
                     key = (turbine_id, timestamp)
                     if key in unique:
                         previous = unique[key]
-                        if any(previous[name] != row[name] for name in ("wind_speed", "temperature", "power")):
+                        if any(previous[name] != row[name] for name in
+                               ("wind_speed", "temperature", "power", "available_at", "sample_count")):
                             raise ValueError(f"противоречивый дубликат турбины {turbine_id}, {iso_utc(timestamp)}")
                         duplicate_count += 1
                         continue
@@ -230,12 +255,12 @@ def load_history(
     for (turbine_id, hour), members in buckets.items():
         row = {
             "timestamp": hour,
-            "available_at": max(member["timestamp"] for member in members),
+            "available_at": max(member["available_at"] for member in members),
             "turbine_id": turbine_id,
-            "sample_count": len(members),
+            "sample_count": sum(member["sample_count"] for member in members),
         }
         for field in ("wind_speed", "temperature", "power"):
-            row[field] = math.fsum(member[field] for member in members) / len(members)
+            row[field] = math.fsum(member[field] * member["sample_count"] for member in members) / row["sample_count"]
         rows.append(row)
     rows.sort(key=lambda row: (row["timestamp"], row["turbine_id"]))
 
@@ -259,9 +284,10 @@ def load_history(
             warnings.append(f"Турбина {turbine_id}: отсутствует {missing_hours} часов; пропуски не заполнены.")
         if constant_power:
             warnings.append(f"Турбина {turbine_id}: мощность постоянна во всей истории; проверьте работу и экспорт.")
-    if naive_count:
+    if naive_count or naive_availability_count:
         warnings.append(
-            f"{naive_count} строк без часового пояса: применён фиксированный UTC{float(timezone_offset_hours):+g}; "
+            f"{naive_count} меток timestamp и {naive_availability_count} меток available_at без часового пояса: "
+            f"применён фиксированный UTC{float(timezone_offset_hours):+g}; "
             "исторические изменения часового пояса не восстанавливаются автоматически."
         )
     if subhourly_count or len(rows) < len(unique):
@@ -269,17 +295,24 @@ def load_history(
             "Подчасовые измерения усреднены арифметически внутри часа UTC; "
             "при нерегулярной частоте это среднее измерений, а не взвешенное по времени."
         )
-    warnings.append(
-        "Часовая метка считается временем доступности измерения; задержка публикации не известна. "
-        "Агрегированный час доступен только после последнего входящего измерения."
-    )
+    if has_availability:
+        warnings.append("Сохранены явные available_at; агрегированный час доступен после всех входящих измерений.")
+    else:
+        warnings.append(
+            "Часовая метка считается временем доступности измерения; задержка публикации не известна. "
+            "Агрегированный час доступен только после последнего входящего измерения."
+        )
     return rows, {
         "source": str(Path(path)), "input_rows": raw_count, "hourly_rows": len(rows),
         "unique_input_rows": len(unique), "identical_duplicates_removed": duplicate_count,
-        "subhourly_rows": subhourly_count, "aggregation": "arithmetic_mean_in_UTC_hour",
+        "subhourly_rows": subhourly_count,
+        "aggregation": "sample_count_weighted_mean_in_UTC_hour" if has_sample_count else "arithmetic_mean_in_UTC_hour",
         "aggregation_rows_collapsed": len(unique) - len(rows),
-        "timestamp_assumption": "hourly_label_available_at_label; aggregate_available_at_latest_sample",
+        "timestamp_assumption": "explicit_available_at_preserved" if has_availability else
+                                "hourly_label_available_at_label; aggregate_available_at_latest_sample",
         "naive_timestamp_rows": naive_count, "timezone_offset_hours": timezone_offset_hours,
+        "naive_availability_rows": naive_availability_count,
+        "explicit_availability": has_availability, "explicit_sample_count": has_sample_count,
         "power_scale": power_scale, "delimiter": delimiter, "columns": columns,
         "turbines": turbine_report, "warnings": warnings,
     }

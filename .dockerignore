@@ -1,0 +1,10 @@
+.venv*
+.git
+.env
+.env.*
+*.pem
+*.key
+__pycache__
+*.zip
+*.bundle
+logs

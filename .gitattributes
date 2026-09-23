@@ -1,0 +1,15 @@
+# Preserve prediction bytes for the reproducibility check on every platform.
+*.csv -text -whitespace
+reports/demo.html -text -whitespace
+*.sqlite binary
+*.joblib binary
+*.parquet binary
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+.dockerignore text eol=lf
+Dockerfile text eol=lf

@@ -10,6 +10,7 @@ import io
 import json
 from pathlib import Path
 import sqlite3
+import subprocess
 import tempfile
 import types
 import unittest
@@ -326,6 +327,39 @@ class ProjectFixtureTests(unittest.TestCase):
         self.assertEqual(first["execution"], "saved_archive")
         self.assertFalse(first["eligibility"]["competition_ready"])
         self.assertEqual({row["persistence_pred"] for row in first["rows"]}, {.1, .2})
+
+    def test_january_audit_rejects_nonfinite_saved_metrics(self):
+        path = self.folder / "reports/january_predictions.csv"
+        for field in ("mae", "rmse", "bias"):
+            for value in (float("nan"), float("inf")):
+                with self.subTest(field=field, value=value):
+                    report = copy.deepcopy(self.report)
+                    report["january_metrics"][0][field] = value
+                    with self.assertRaisesRegex(ValueError, "метрики"):
+                        audit_january(path, report)
+
+    def test_engine_rejects_invalid_calibration_even_with_matching_file_hash(self):
+        path = self.folder / "reports/training_report.json"
+        for value in (float("nan"), float("inf"), -.1, True):
+            with self.subTest(radius=value):
+                report = copy.deepcopy(self.report)
+                report["calibration_january"]["T1/01-24"] = value
+                # Deliberately write invalid JSON numbers accepted by Python's
+                # decoder, bypassing the application's safe JSON writer.
+                path.write_text(json.dumps(report, allow_nan=True), encoding="utf-8")
+                self.info["asset_hashes"]["reports/training_report.json"] = sha_file(path)
+                with self.assertRaisesRegex(ValueError, "калибровка"):
+                    self._engine()
+
+    def test_native_timeout_is_actionable_and_does_not_silently_use_saved_output(self):
+        engine = self._engine()
+        weather = engine.weather(self.issue, 24)
+        with patch("windagent.project.model_python", return_value="fixture-python"), \
+             patch("windagent.project.subprocess.run", side_effect=subprocess.TimeoutExpired("fixture-python", 90)), \
+             patch.object(engine, "saved") as saved:
+            with self.assertRaisesRegex(RuntimeError, "90 секунд"):
+                engine.predict(self.issue, weather)
+            saved.assert_not_called()
 
     def test_project_agent_checks_training_boundary_before_cache_or_weather_access(self):
         agent = self._agent()

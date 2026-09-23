@@ -148,7 +148,8 @@ def audit_january(path, report):
             "mae": math.fsum(abs(x) for x in errors) / len(errors),
             "rmse": math.sqrt(math.fsum(x * x for x in errors) / len(errors)), "bias": math.fsum(errors) / len(errors)}
         saved = next(r for r in report["january_metrics"] if r["model"] == "selected_model" and r["turbine_id"] == turbine and r["horizon"] == bucket)
-        if any(abs(metrics[k] - saved[k]) > 1e-10 for k in ("mae", "rmse", "bias")) or metrics["n"] != saved["n"]:
+        if any(not isinstance(saved.get(k), (int, float)) or not math.isfinite(saved[k]) or abs(metrics[k] - saved[k]) > 1e-10
+               for k in ("mae", "rmse", "bias")) or metrics["n"] != saved["n"]:
             raise ValueError("Январские метрики не совпадают с сохранёнными прогнозами.")
         verified.append(metrics)
     return {"metrics": verified, "rows": len(seen), "arithmetic_verified": True,
@@ -209,6 +210,11 @@ class ProjectEngine:
         for asset in ("artifacts/catboost.cbm", "reports/training_report.json"):
             if sha_file(self.folder / asset) != info["asset_hashes"][asset]:
                 raise ValueError("Изменён исходный файл модели/калибровки; требуется новая проверка: " + asset)
+        for turbine in ("T1", "T2"):
+            for horizon in ("01-24", "25-48"):
+                radius = self.report.get("calibration_january", {}).get(turbine + "/" + horizon)
+                if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not math.isfinite(radius) or not 0 <= radius <= 1:
+                    raise ValueError("Некорректная калибровка полосы прогноза в отчёте проекта.")
 
     def weather(self, as_of, hours):
         issue = utc(as_of)
@@ -294,8 +300,11 @@ class ProjectEngine:
             return self.saved(as_of, weather), "saved_archive", None
         request = {"model_path": str(self.folder / "artifacts/catboost.cbm"), "feature_names": FEATURE_NAMES,
                    "features": make_features(weather["rows"], as_of)}
-        process = subprocess.run([runner, "-B", str(ROOT / "windagent/catboost_worker.py")], input=encoded(request),
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        try:
+            process = subprocess.run([runner, "-B", str(ROOT / "windagent/catboost_worker.py")], input=encoded(request),
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Расчёт CatBoost превысил лимит 90 секунд.") from exc
         if process.returncode:
             raise ValueError("Расчёт CatBoost завершился ошибкой: " + process.stderr.decode("utf-8", errors="replace")[-1800:])
         predicted = json.loads(process.stdout)["predictions"]

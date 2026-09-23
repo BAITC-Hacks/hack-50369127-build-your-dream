@@ -1,0 +1,13 @@
+# Python 3.10+. SQLite is part of Python. Models are added in module 3.
+numpy==1.26.4
+pandas==2.2.3
+PyYAML==6.0.2
+requests==2.32.3
+urllib3==2.2.3
+certifi==2025.1.31
+charset-normalizer==3.4.1
+idna==3.10
+python-dateutil==2.9.0.post0
+pytz==2025.1
+tzdata==2025.1
+six==1.17.0

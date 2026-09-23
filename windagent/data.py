@@ -260,7 +260,8 @@ def load_history(
             "sample_count": sum(member["sample_count"] for member in members),
         }
         for field in ("wind_speed", "temperature", "power"):
-            row[field] = math.fsum(member[field] * member["sample_count"] for member in members) / row["sample_count"]
+            row[field] = (members[0][field] if len(members) == 1 else
+                          math.fsum(member[field] * member["sample_count"] for member in members) / row["sample_count"])
         rows.append(row)
     rows.sort(key=lambda row: (row["timestamp"], row["turbine_id"]))
 

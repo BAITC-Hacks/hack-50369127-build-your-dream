@@ -24,12 +24,21 @@ def main(argv=None):
     ingest.add_argument("path", type=Path)
     ingest.add_argument("--timezone-offset", type=float, default=5)
     ingest.add_argument("--power-scale", type=float, default=1)
+    pair = sub.add_parser("import-turbines", help="Загрузить два исходных 10-минутных CSV организаторов")
+    pair.add_argument("turbine_1", type=Path)
+    pair.add_argument("turbine_2", type=Path)
+    pair.add_argument("--timezone-offset", type=float, default=0)
+    pair.add_argument("--interval-convention", choices=("start", "end"), default="start")
+    project = sub.add_parser("import-project", help="Проверить и подключить ZIP-проект, погодный кеш и native CatBoost")
+    project.add_argument("archive", type=Path)
+    project.add_argument("--turbine-1", type=Path, help="Дополнительно проверить совпадение отдельного CSV")
+    project.add_argument("--turbine-2", type=Path, help="Дополнительно проверить совпадение отдельного CSV")
     for command in ("forecast", "backtest", "watch"):
         p = sub.add_parser(command)
-        p.add_argument("--mode", choices=("archive", "demo"), default="archive")
+        p.add_argument("--mode", choices=("archive", "demo", "project"), default="archive")
         p.add_argument("--hours", type=int, choices=(24, 48), default=48)
         if command != "backtest":
-            p.add_argument("--as-of", default="2026-01-31T23:00:00+05:00")
+            p.add_argument("--as-of", help="Момент выпуска с поясом; по умолчанию отсечка выбранного сценария")
         if command == "forecast":
             p.add_argument("--refresh", action="store_true")
         if command == "watch":
@@ -60,8 +69,15 @@ def main(argv=None):
         elif args.command == "import":
             result = agent.import_csv(args.path.read_text(encoding="utf-8-sig"), args.path.name,
                                       args.timezone_offset, args.power_scale)
+        elif args.command == "import-turbines":
+            result = agent.import_turbines({"1": args.turbine_1, "2": args.turbine_2}, args.timezone_offset, args.interval_convention)
+        elif args.command == "import-project":
+            if bool(args.turbine_1) != bool(args.turbine_2):
+                raise ValueError("Для сверки предоставьте оба исходных CSV: --turbine-1 и --turbine-2.")
+            originals = {"1": args.turbine_1, "2": args.turbine_2} if args.turbine_1 else None
+            result = agent.import_project(args.archive, originals)
         elif args.command == "forecast":
-            result = agent.forecast(args.as_of, args.hours, args.mode, args.refresh)
+            result = agent.forecast(args.as_of or agent.config["training_cutoff"], args.hours, args.mode, args.refresh)
         elif args.command == "backtest":
             result = agent.backtest(args.mode, args.hours)
         elif args.command == "export":
@@ -84,7 +100,7 @@ def main(argv=None):
                             agent.import_csv(contents.decode("utf-8-sig"), args.history.name,
                                              args.timezone_offset, args.power_scale)
                             previous_hash = current_hash
-                    run = agent.forecast(args.as_of, args.hours, args.mode, refresh=True)
+                    run = agent.forecast(args.as_of or agent.config["training_cutoff"], args.hours, args.mode, refresh=True)
                     print(json.dumps({"id": run["id"], "as_of": run["as_of"], "reused": run["reused"]}), flush=True)
                 except (ValueError, RuntimeError, OSError) as exc:
                     print(f"Ошибка цикла: {exc}", file=sys.stderr, flush=True)
@@ -98,6 +114,14 @@ def main(argv=None):
                 summary["row_count"] = len(result["rows"])
             elif "rows" in result:
                 summary["rows"] = result["rows"]
+            if result.get("project"):
+                p = result["project"]
+                summary["project"] = {"archive_sha256": p["archive_sha256"], "folder": p["folder"],
+                    "manifest_files_verified": p["manifest_files_verified"], "weather_cache_records": p["weather_audit"]["records"],
+                    "january_metrics_verified": p["january_audit"]["arithmetic_verified"]}
+                summary.pop("scenario_config", None)
+                d = result["dataset"]
+                summary["dataset"] = {k: d[k] for k in ("source", "demo", "kind", "rows", "turbines", "path")}
             print(encoded(summary).decode("utf-8"))
         return 0
     except (ValueError, RuntimeError, OSError) as exc:

@@ -203,6 +203,8 @@ function render() {
   all("[data-display-timezone]").forEach((element) => { element.textContent = timezoneLabel(); });
   const projectOption = $("weather-mode").querySelector('option[value="project"]');
   if (projectOption) { projectOption.hidden = !isProject(); projectOption.disabled = !isProject(); }
+  if (!app.busy) $("refresh-button").innerHTML = icon("refresh") + (isProject() ? "Проверить кеш проекта" : "Проверить обновления");
+  $("refresh-button").title = isProject() ? "Проверяет локальный кеш и пересчитывает результат; новые погодные данные не загружаются" : "Проверяет изменения входных данных и обновляет прогноз";
   $("welcome-card").hidden = Boolean(dataset);
   const badge = $("environment-badge");
   badge.className = "badge " + (!dataset ? "neutral" : dataset.demo || run?.mode === "demo" ? "demo" : "");
@@ -243,7 +245,9 @@ function renderForecast() {
   $("metric-hours-note").textContent = run ? "Выпуск на " + fmtDate(run.as_of) + " " + timezoneLabel() : "Почасовой шаг · 2 турбины";
   $("chart-period").textContent = rows.length ? fmtDate(rows[0].valid_time) + " — " + fmtDate(rows[rows.length - 1].valid_time) + " · " + timezoneLabel() + (isSavedArchive(run) ? " · сохранённый расчёт" : "") : "Подготовьте данные, чтобы увидеть прогноз";
   $("chart-empty").hidden = rows.length > 0;
-  $("chart-caption").textContent = selected === "farm" ? "Среднее нормализованной мощности. Диапазон — среднее границ турбин." : "Эмпирический диапазон модели; не гарантированный доверительный интервал.";
+  const hasInterval = rows.some((row) => finite(row.lower) && finite(row.upper));
+  $("interval-legend").hidden = rows.length > 0 && !hasInterval;
+  $("chart-caption").textContent = rows.length && !hasInterval ? "Нормализованная мощность. Диапазон неопределённости отсутствует в результате." : selected === "farm" ? "Среднее нормализованной мощности. Диапазон — среднее границ турбин." : "Эмпирический диапазон модели; не гарантированный доверительный интервал.";
   if (!rows.length) $("chart-caption").textContent = "Мощность нормализована от 0 до 100%. Это не энергия в МВт·ч.";
   renderChart(rows);
   renderTable(rows);
@@ -352,8 +356,9 @@ function renderSources() {
   const source = first.source || first.provider || first.model || (run?.mode === "demo" ? "Синтетическая погода" : run ? "Архив погодных запусков" : "Не запрошена");
   let html = sourceRow("История ВЭС", dataset ? dataset.demo ? '<span class="tag warning">Синтетический пример</span>' : escapeHTML(dataset.source || "Загруженный CSV") : "Не загружена", Boolean(dataset));
   html += sourceRow("Погодные данные", source);
+  if (isProject()) html += sourceRow("Обновление", "Проверка кеша · без загрузки погоды");
   const modelNames = { empirical_curve: "Эмпирическая кривая", constant: "Постоянный прогноз", persistence: "Последняя мощность" };
-  const kinds = [...new Set(Object.values(model?.diagnostics || {}).map((d) => modelNames[d.selected_kind] || d.selected_kind).filter(Boolean))];
+  const kinds = [...new Set(Object.values(model?.diagnostics || {}).map((d) => modelNames[d?.selected_kind] || d?.selected_kind).filter(Boolean))];
   html += sourceRow("Модель", model ? model.name || model.model_type || model.method || kinds.join(" / ") || "Обучена на загруженной истории" : "Не обучена");
   html += sourceRow("Момент прогноза", run ? fmtDate(run.as_of) + " " + timezoneLabel() : "—");
   const issue = first.issue_time || first.issued_at || first.run_time || first.model_run || first.init_time;
@@ -412,11 +417,11 @@ function renderProjectModel(model) {
   if (model.training_cutoff) html += sourceRow("Отсечка обучения", fmtDate(model.training_cutoff) + " " + timezoneLabel());
   html += '<p class="small-muted model-context">Импортирована модель CatBoost. Повторное обучение при подключении архива не выполняется; способ получения каждого прогноза указан рядом с результатом.</p>';
   if (metrics.length) {
-    html += '<h3 class="diagnostic-title">Январь 2026 · проверка погодного прогноза</h3>';
+    html += '<h3 class="diagnostic-title">Январь 2026 · проверка прогноза мощности</h3>';
     html += '<p class="small-muted">MAE и RMSE приведены в процентных пунктах нормализованной мощности. Это отдельная проверка по январским прогнозам, не оценка февральской выработки.</p>';
-    html += note(model.independently_verified_metrics ? "Январские метрики независимо пересчитаны по сохранённым прогнозам и фактической мощности." : model.imported_report ? "Метрики импортированы из отчёта проекта. Независимый пересчёт метрик не подтверждён." : "Показаны январские метрики, сохранённые в проекте.", !model.independently_verified_metrics);
+    html += note(model.independently_verified_metrics ? "MAE и RMSE CatBoost независимо пересчитаны по сохранённым январским прогнозам и фактической мощности. Метрики базовых моделей импортированы из отчёта." : model.imported_report ? "Метрики импортированы из отчёта проекта. Независимый пересчёт метрик не подтверждён." : "Показаны январские метрики, сохранённые в проекте.", !model.independently_verified_metrics);
     html += '<div class="table-scroll"><table class="diagnostic-table"><thead><tr><th>Модель</th><th>Турбина</th><th>Горизонт</th><th>Строк</th><th>MAE, п. п.</th><th>RMSE, п. п.</th></tr></thead><tbody>';
-    const modelNames = { catboost: "CatBoost", catboost_global: "CatBoost", physics: "Физическая модель", power_curve: "Кривая мощности", persistence: "Последняя мощность", constant: "Средняя мощность" };
+    const modelNames = { selected_model: "CatBoost", historical_mean: "Средняя мощность", weather_power_curve: "Кривая мощности", frozen_persistence: "Последняя мощность", catboost: "CatBoost", catboost_global: "CatBoost", physics: "Физическая модель", power_curve: "Кривая мощности", persistence: "Последняя мощность", constant: "Средняя мощность" };
     for (const metric of metrics) {
       const factor = ["percentage_points", "percent", "pct"].includes(metric.unit || model.metrics_unit) ? 1 : 100;
       const horizon = metric.horizon ?? metric.horizon_hours;
@@ -479,6 +484,8 @@ function renderBacktest() {
   const coverage = typeof report.coverage_hours === "object" ? Math.min(...Object.values(report.coverage_hours)) : report.coverage_hours;
   let html = '<div class="data-section-title"><span>Результат за февраль 2026</span><button id="export-backtest" class="button button-secondary button-small">' + icon("download") + 'Скачать CSV</button></div>';
   html += '<div class="data-stats"><div class="data-stat"><span>Запусков</span><strong>' + n(runs, true) + '</strong></div><div class="data-stat"><span>Покрытие месяца</span><strong>' + n(coverage, true) + '<small style="font-size:12px"> / ' + n(report.expected_hours || 672, true) + '</small></strong></div><div class="data-stat"><span>Строк прогноза</span><strong>' + n(rowCount, true) + "</strong></div></div>";
+  if (isSavedArchive(report)) html += note("Сохранённый расчёт из архива. Показаны результаты исторических запусков; модель повторно не выполнялась.", true);
+  else if (report.mode === "project" && executionOf(report) === "recomputed") html += note("Прогнозы CatBoost рассчитаны заново на погодных признаках из кеша проекта.");
   html += note(report.mode === "demo" ? "Демонстрационный тест на синтетических входах. Он проверяет работоспособность полного цикла, а не качество реального прогноза." : "Архив: доступность требует подтверждения. Перед использованием результатов в конкурсе необходим аудит погодного источника.", true);
   html += note("Без фактической выработки за февраль MAE и RMSE тестового месяца не вычисляются.");
   if (report.eligibility?.reason) html += note(report.eligibility.reason, true);
@@ -490,16 +497,18 @@ function runPayload(refresh = false) {
   const date = $("as-of").value;
   if (!date) throw new Error("Укажите момент формирования прогноза.");
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(date)) throw new Error("Проверьте формат даты и времени.");
-  return { as_of: date + ":00+05:00", hours: app.hours, mode: $("weather-mode").value, refresh };
+  return { as_of: date + ":00" + timezoneSuffix(), hours: app.hours, mode: $("weather-mode").value, refresh };
 }
 function resultNotice(run) {
-  if (run?.mode === "archive") showNotice("Архив: доступность требует подтверждения. Проверьте предупреждения и происхождение погодных запусков перед конкурсной оценкой.", "warning");
+  if (isSavedArchive(run)) showNotice("Сохранённый расчёт из архива. Модель в этом запросе не запускалась. Историческая доступность погодных выпусков требует подтверждения.", "warning");
+  else if (run?.mode === "project") showNotice((executionOf(run) === "recomputed" ? "CatBoost выполнен заново на признаках из кеша проекта. " : "Прогноз из проекта загружен. ") + "Архив: доступность требует подтверждения.", "warning");
+  else if (run?.mode === "archive") showNotice("Архив: доступность требует подтверждения. Проверьте предупреждения и происхождение погодных запусков перед конкурсной оценкой.", "warning");
   else showNotice(run?.reused ? "Входные данные не изменились. Сохранённый прогноз использован повторно." : "Демонстрационный прогноз рассчитан. Погода и результаты этого режима — синтетический пример.", "warning");
 }
 async function calculate(refresh = false) {
   const button = refresh ? $("refresh-button") : $("forecast-button");
-  await withBusy(button, refresh ? "Проверяем…" : "Рассчитываем…", async () => {
-    showNotice(refresh ? "Агент проверяет входные данные. Если они изменились, прогноз будет пересчитан." : "Агент получает погоду, подготавливает признаки и рассчитывает прогноз. Архивный запрос может занять несколько минут.");
+  await withBusy(button, refresh ? "Проверяем…" : "Получаем прогноз…", async () => {
+    showNotice($("weather-mode").value === "project" ? "Проверяем кеш проекта и получаем прогноз. В результате будет указан новый запуск модели или сохранённый расчёт." : refresh ? "Агент проверяет входные данные. Если они изменились, прогноз будет пересчитан." : "Агент получает погоду, подготавливает признаки и рассчитывает прогноз. Архивный запрос может занять несколько минут.");
     const result = await api("/api/forecast", runPayload(refresh));
     app.showAllRows = false;
     await loadState();
@@ -549,6 +558,7 @@ $("demo-button").addEventListener("click", () => withBusy($("demo-button"), "Г�
 }));
 all(".import-trigger").forEach((button) => button.addEventListener("click", () => {
   $("import-error").hidden = true;
+  $("data-timezone").value = String(timezoneOffset());
   $("import-dialog").showModal();
 }));
 function closeImport() { if (!app.busy) $("import-dialog").close(); }
@@ -577,11 +587,11 @@ $("import-form").addEventListener("submit", (event) => {
   });
 });
 $("backtest-button").addEventListener("click", () => withBusy($("backtest-button"), "Выполняем тест…", async () => {
-  showNotice("Запускаем ежедневные прогнозы за февраль. Для архивного режима нужны погодные запуски по каждому дню; расчёт может занять несколько минут.");
+  showNotice($("weather-mode").value === "project" ? "Получаем февральские результаты из проекта. Способ получения прогнозов будет указан в отчёте." : "Запускаем ежедневные прогнозы за февраль. Для архивного режима нужны погодные запуски по каждому дню; расчёт может занять несколько минут.");
   const result = await api("/api/backtest", { mode: $("weather-mode").value, hours: 48 });
   await loadState();
   if (!app.state.backtest) { app.state.backtest = result.report || result; renderBacktest(); }
-  showNotice("Ретроспективный тест завершён. Проверьте покрытие месяца и ограничения источника погоды.", app.state.backtest.mode === "demo" || app.state.backtest.eligibility?.competition_ready !== true ? "warning" : "");
+  showNotice((isSavedArchive(app.state.backtest) ? "Сохранённый февральский расчёт загружен из архива. " : "Результаты ретроспективного теста получены. ") + "Проверьте покрытие месяца и ограничения источника погоды.", app.state.backtest.mode === "demo" || app.state.backtest.eligibility?.competition_ready !== true ? "warning" : "");
 }));
 setView(location.hash.slice(1) || "overview", false);
 render();

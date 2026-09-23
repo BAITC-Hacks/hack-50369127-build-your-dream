@@ -34,6 +34,8 @@ class ForecastAgent:
         self.state_path = self.workspace / "state.json"
         self.state = read_json(self.state_path) if self.state_path.exists() else {
             "dataset": None, "model": None, "last_run": None, "backtest": None}
+        if self.state.get("scenario_config"):
+            self.config = self.state["scenario_config"]
 
     def snapshot(self):
         return {**self.state, "config": self.config, "workspace": str(self.workspace)}
@@ -71,6 +73,48 @@ class ForecastAgent:
             raise ValueError("Уже загружена реальная история. Для отдельного демо запустите CLI с --workspace runtime-demo.")
         return self.import_csv(history_csv(self.config), "Учебная история (синтетическая)", demo=True)
 
+    def import_turbines(self, paths, timezone_offset_hours=0, interval_convention="start"):
+        from .telemetry import history_to_csv, load_turbine_files
+        rows, report = load_turbine_files(paths, timezone_offset_hours, interval_convention)
+        self.import_csv(history_to_csv(rows), "Две турбины · реальные CSV", timezone_offset_hours=timezone_offset_hours)
+        self.state["dataset"]["report"]["source_audit"] = report
+        self.state["dataset"]["report"]["warnings"].extend(report.get("warnings", []))
+        self._save()
+        return self.snapshot()
+
+    def import_project(self, archive_path, external_turbines=None):
+        from .project import install_archive, WARNINGS
+        from .telemetry import history_to_csv, load_turbine_files
+        info = install_archive(archive_path, self.workspace / "projects", external_turbines)
+        folder = Path(info["folder"])
+        paths = {t: folder / f"data/raw/turbine_{t}.csv" for t in ("1", "2")}
+        rows, report = load_turbine_files(paths, timezone_offset_hours=0, interval_convention="start")
+        text = history_to_csv(rows)
+        source_path = self.workspace / "imports" / (digest(text) + ".csv")
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.write_text(text, encoding="utf-8", newline="")
+        training = read_json(folder / "reports/training_report.json")
+        config = {**load_config(), "timezone_offset_hours": 0, "availability_lag_hours": 8,
+            "training_cutoff": "2026-01-31T23:00:00+00:00", "test_start": "2026-02-01T00:00:00+00:00",
+            "test_end": "2026-03-01T00:00:00+00:00"}
+        # Record the previous session before replacing only the active selection.
+        if self.state.get("dataset"):
+            save_json(self.workspace / "sessions" / (digest(self.state)[:20] + ".json"), self.state)
+        model = {"kind": "catboost_archive", "name": "CatBoost · depth 4 · MAE", "training_rows": training["rows"]["final_fit"],
+            "training_cutoff": info["training_cutoff"], "training_end": info["training_cutoff"], "diagnostics": {},
+            "january_metrics": training["january_metrics"], "imported_report": True, "independently_verified_metrics": True,
+            "january_audit": info["january_audit"], "validation": "Выбор модели на декабре, независимые прогнозы января; февральские факты отсутствуют.",
+            "warnings": WARNINGS.copy(), "interval": {"description": WARNINGS[-1], "calibrated": True, "coverage_target": .8}}
+        report["warnings"] = list(dict.fromkeys(report.get("warnings", []) + WARNINGS))
+        dataset = {"source": "HackAlemAI · turbine 1 + turbine 2", "demo": False, "kind": "project_archive",
+            "rows": len(rows), "turbines": ["1", "2"], "report": report, "path": str(source_path),
+            "timezone_offset_hours": 0, "power_scale": 1, "sha256": digest(text), "imported_at": now()}
+        self.config = config
+        self.state = {"dataset": dataset, "model": model, "project": info, "scenario_config": config,
+                      "last_run": None, "backtest": None}
+        self._save()
+        return self.snapshot()
+
     def _models_at(self, as_of):
         dataset = self.state["dataset"]
         if not dataset:
@@ -96,10 +140,21 @@ class ForecastAgent:
             raise ValueError("Момент расчёта должен приходиться на начало часа.")
         if hours not in (24, 48):
             raise ValueError("Горизонт прогноза должен быть 24 или 48 часов.")
-        if mode not in ("archive", "demo"):
-            raise ValueError("Режим должен быть archive или demo.")
+        if mode not in ("archive", "demo", "project"):
+            raise ValueError("Режим должен быть archive, demo или project.")
         if not self.state["dataset"]:
             raise ValueError("Сначала загрузите историю ВЭС.")
+        if mode == "project":
+            if self.state["dataset"].get("kind") != "project_archive":
+                raise ValueError("Сначала импортируйте предоставленный ZIP-проект.")
+            try:
+                return self._project_forecast(as_of, hours, refresh)
+            except (ValueError, RuntimeError, OSError) as exc:
+                save_json(self.workspace / "last_error.json", {"as_of": iso(as_of), "events": [
+                    {"stage": "error", "status": "error", "message": str(exc), "time": now()}]})
+                raise
+        if self.state["dataset"].get("kind") == "project_archive":
+            raise ValueError("Для импортированной CatBoost-модели выберите источник «Кеш проекта · ECMWF».")
         if self.state["dataset"]["demo"] != (mode == "demo"):
             raise ValueError("Учебная история работает только с учебной погодой; для архива загрузите реальную историю.")
         events = []
@@ -163,6 +218,70 @@ class ForecastAgent:
             save_json(self.workspace / "last_error.json", {"as_of": iso(as_of), "events": events})
             raise
 
+    def _project_forecast(self, as_of, hours, refresh):
+        from .project import ProjectEngine, model_python
+        engine = ProjectEngine(self.state["project"], self.config["turbines"])
+        if as_of < utc(engine.report["final_training_asof"]):
+            raise ValueError("Импортированная модель обучена позже выбранного выпуска. Ранние выпуски требуют отдельного обучения.")
+        source_path = Path(self.state["dataset"]["path"])
+        with source_path.open(encoding="utf-8", newline="") as source_file:
+            source_text = source_file.read()
+        if digest(source_text) != self.state["dataset"]["sha256"]:
+            raise ValueError("Изменена история импортированного проекта. Повторно импортируйте проверенный архив.")
+        events = []
+
+        def event(stage, message):
+            events.append({"stage": stage, "status": "done", "message": message, "time": now()})
+
+        event("plan", "Проектный сценарий: 23:00 UTC, полные 10-минутные интервалы, модель заморожена 31 января.")
+        weather = engine.weather(as_of, hours)
+        self._validate_weather(weather, as_of, hours)
+        event("weather", "Исходные ответы из SQLite-кеша перепроверены по SHA-256; сохранены выпуск и предполагаемая доступность.")
+        intended = "recomputed" if model_python() else "saved_archive"
+        signature = {"model_sha256": self.state["project"]["asset_hashes"]["artifacts/catboost.cbm"],
+                     "calibration_sha256": self.state["project"]["asset_hashes"]["reports/training_report.json"],
+                     "archive_sha256": self.state["project"]["archive_sha256"],
+                     "dataset_sha256": self.state["dataset"]["sha256"],
+                     "weather": [{k: p[k] for k in ("turbine_id", "run_time", "sha256")} for p in weather["provenance"]],
+                     "as_of": iso(as_of), "hours": hours, "execution": intended, "adapter_version": 2}
+        identifier = digest(signature)[:24]
+        run_path = self.workspace / "runs" / (identifier + ".json")
+        event("prepare", "Сформированы только признаки архивного погодного прогноза; измерения целевого часа не используются.")
+        if run_path.exists() and not refresh:
+            result = read_json(run_path)
+            result["reused"] = True
+            event("reuse", "Версии модели и погоды не изменились: использован сохранённый расчёт.")
+            result["events"] = events + result["events"][-1:]
+        else:
+            predictions, execution, comparison = engine.predict(as_of, weather)
+            event("predict", "Выполнен новый расчёт native CatBoost на проверенном погодном кеше." if execution == "recomputed" else
+                  "Открыт сохранённый расчёт из предоставленного архива; новый расчёт модели не выполнялся.")
+            source, _ = load_history(self.state["dataset"]["path"], 0, 1)
+            available = [row for row in source if utc(row["available_at"]) <= min(as_of, utc(self.config["training_cutoff"]))]
+            last = {}
+            for row in available:
+                last[row["turbine_id"]] = row["power"]
+            for row in predictions:
+                row["persistence_pred"] = last[row["turbine_id"]]
+                if not 0 <= row["lower"] <= row["power_pred"] <= row["upper"] <= 1:
+                    raise ValueError("Импортированная модель вернула некорректную полосу мощности.")
+            powers = [row["power_pred"] for row in predictions]
+            analysis = {"complete": True, "row_count": len(predictions), "mean_power": sum(powers) / len(powers),
+                "min_power": min(powers), "max_power": max(powers), "unit": "normalized_power",
+                "archive_reproduction_max_error": comparison, "aggregation": "equal_weight_mean_not_farm_energy"}
+            event("analyse", "Покрытие и границы мощности проверены." + (f" Отклонение от исходного расчёта: {comparison:.3g}." if comparison is not None else ""))
+            event("save", "Прогноз, версия модели и происхождение погодного кеша сохранены.")
+            result = {"id": identifier, "as_of": iso(as_of), "hours": hours, "mode": "project", "created_at": now(),
+                "rows": predictions, "execution": execution, "engine": {"kind": "catboost", "execution": execution},
+                "model_sha256": signature["model_sha256"], "model_training_cutoff": self.config["training_cutoff"],
+                "provenance": weather["provenance"], "warnings": weather["warnings"], "analysis": analysis,
+                "events": events, "reused": False, "eligibility": {"competition_ready": False,
+                    "reason": "Нужно подтвердить часовой пояс телеметрии, смысл интервала и историческую доступность погодных выпусков."}}
+            save_json(run_path, result)
+        self.state["last_run"] = result
+        self._save()
+        return result
+
     def _validate_weather(self, weather, as_of, hours):
         expected = {(t["id"], as_of + timedelta(hours=h)) for t in self.config["turbines"] for h in range(1, hours + 1)}
         seen = set()
@@ -213,7 +332,8 @@ class ForecastAgent:
         # Includes 28 February issue, whose targets lie in March; keep its audit but not its targets in February export.
         while issue < end:
             result = self.forecast(issue, hours, mode)
-            runs.append({"id": result["id"], "as_of": result["as_of"], "hours": hours})
+            runs.append({"id": result["id"], "as_of": result["as_of"], "hours": hours,
+                         "execution": result.get("execution", "recomputed")})
             for row in result["rows"]:
                 valid = utc(row["valid_time"])
                 if start <= valid < end:
@@ -232,6 +352,9 @@ class ForecastAgent:
                 "Прогнозы с разных дат выпуска сохранены отдельно. CSV submission содержит только первые 24 ч каждого выпуска.",
                 DEMO_WARNING if mode == "demo" else "Доступность и оперативное происхождение архива требуют подтверждения."],
             "competition_ready": False}
+        executions = {run["execution"] for run in runs}
+        report["execution"] = next(iter(executions)) if len(executions) == 1 else "mixed"
+        report["execution_counts"] = {value: sum(run["execution"] == value for run in runs) for value in executions}
         save_json(self.workspace / "backtest_rows.json", result_rows)
         save_json(self.workspace / "backtest_report.json", report)
         self.state["backtest"] = report
@@ -246,7 +369,8 @@ class ForecastAgent:
             "persistence_pred": row.get("persistence_pred"), "wind_speed": row["wind_speed"], "temperature": row["temperature"],
             "weather_run": provenance["run_time"], "weather_available_at": provenance["available_at"],
             "availability_basis": provenance["availability_basis"], "weather_sha256": provenance["sha256"],
-            "model_sha256": run["model_sha256"], "mode": run["mode"], "competition_ready": False}
+            "model_sha256": run["model_sha256"], "mode": run["mode"],
+            "execution": run.get("execution", "recomputed"), "competition_ready": False}
 
     def export(self, kind="forecast"):
         if kind == "forecast":

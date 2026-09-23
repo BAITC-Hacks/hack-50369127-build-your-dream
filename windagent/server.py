@@ -75,6 +75,8 @@ def serve(agent, port=8080):
                 elif self.path == "/api/import":
                     result = agent.import_csv(body.get("csv", ""), body.get("filename", "history.csv"),
                         float(body.get("timezone_offset_hours", 5)), float(body.get("power_scale", 1)))
+                elif self.path == "/api/import-project":
+                    result = agent.import_project(body["archive_path"])
                 elif self.path == "/api/forecast":
                     result = agent.forecast(body["as_of"], int(body.get("hours", 48)), body.get("mode", "archive"), bool(body.get("refresh", False)))
                 elif self.path == "/api/backtest":

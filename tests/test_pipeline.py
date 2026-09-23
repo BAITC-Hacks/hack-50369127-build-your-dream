@@ -16,7 +16,7 @@ import pandas as pd
 import requests
 
 from src.data.build_features import FEATURE_COLUMNS, join_labels, build
-from src.data.fetch_weather import WeatherClient, UNITS, VARIABLES, parse_response, select_run
+from src.data.fetch_weather import WeatherClient, WeatherUnavailableError, UNITS, VARIABLES, parse_response, select_run
 from src.data.preprocess_telemetry import preprocess_telemetry
 from src.utils.common import load_config, utc
 
@@ -153,6 +153,90 @@ class PipelineTests(unittest.TestCase):
                 client.fetch(self.cfg["turbines"][0], self.issue, self.times)
         finally:
             client.close()
+
+    def test_cache_request_and_payload_corruption_cannot_be_hidden_by_refresh(self) -> None:
+        session = FakeSession(weather_payload(self.times))
+        client = WeatherClient(self.cfg, session=session)
+        try:
+            client.fetch(self.cfg["turbines"][0], self.issue, self.times)
+            with sqlite3.connect(client.cache) as db:
+                original = db.execute("SELECT request_json,payload_json,payload_sha256 FROM weather_cache").fetchone()
+            for column, altered in (("request_json", "{}"), ("payload_json", "{}"), ("payload_sha256", "0" * 64)):
+                with self.subTest(column=column):
+                    with sqlite3.connect(client.cache) as db:
+                        db.execute("UPDATE weather_cache SET request_json=?,payload_json=?,payload_sha256=?", original)
+                        db.execute(f"UPDATE weather_cache SET {column}=?", (altered,))
+                    for refresh in (False, True):
+                        client.refresh = refresh
+                        with self.assertRaisesRegex(ValueError, "Corrupt"):
+                            client.fetch(self.cfg["turbines"][0], self.issue, self.times)
+                    self.assertEqual(session.calls, 1, "Corruption must halt before a refresh request")
+        finally:
+            client.close()
+
+    def test_only_transport_failure_is_classified_as_weather_unavailable(self) -> None:
+        session = FakeSession(weather_payload(self.times))
+        client = WeatherClient(self.cfg, session=session)
+        try:
+            with patch.object(session, "get", side_effect=requests.Timeout("Synthetic timeout")):
+                with self.assertRaises(WeatherUnavailableError):
+                    client.fetch(self.cfg["turbines"][0], self.issue, self.times)
+            malformed = FakeResponse({})
+            with patch.object(session, "get", return_value=malformed), \
+                 patch.object(malformed, "json", side_effect=ValueError("Malformed JSON")):
+                with self.assertRaisesRegex(ValueError, "Invalid weather JSON"):
+                    client.fetch(self.cfg["turbines"][0], self.issue, self.times)
+            with sqlite3.connect(client.cache) as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM weather_cache").fetchone()[0], 0)
+        finally:
+            client.close()
+
+    def test_allow_missing_does_not_skip_validation_or_integrity_failures(self) -> None:
+        path = self.telemetry_file()
+        for turbine in self.cfg["turbines"]:
+            turbine["telemetry_file"] = str(path)
+        self.cfg["dataset"]["issue_end_date"] = "2026-01-31"
+        client = WeatherClient(self.cfg, session=FakeSession(weather_payload(self.times)))
+        try:
+            with patch("src.data.build_features.WeatherClient", return_value=client), \
+                 patch.object(client, "fetch", side_effect=ValueError("Corrupt weather cache entry")) as fetch:
+                with self.assertRaisesRegex(ValueError, "Corrupt"):
+                    build(self.cfg, allow_missing=True)
+                self.assertEqual(fetch.call_count, 1)
+            self.assertFalse((self.root / "data/features/dataset_20260131_20260131.csv").exists())
+        finally:
+            client.close()
+
+    def test_allow_missing_records_only_unavailable_issues_and_keeps_complete_later_issue(self) -> None:
+        path = self.telemetry_file()
+        for turbine in self.cfg["turbines"]:
+            turbine["telemetry_file"] = str(path)
+        self.cfg["dataset"]["issue_end_date"] = "2026-02-01"
+        times = pd.date_range("2026-02-01", periods=96, freq="h", tz="UTC")
+        for error in (WeatherUnavailableError("Synthetic transport outage"), FileNotFoundError("Offline cache miss")):
+            with self.subTest(error=type(error).__name__):
+                client = WeatherClient(self.cfg, session=FakeSession(weather_payload(times)))
+                original_fetch = client.fetch
+                calls = []
+
+                def fetch(turbine: dict[str, Any], issue: pd.Timestamp, window: pd.DatetimeIndex) -> pd.DataFrame:
+                    calls.append((turbine["id"], issue))
+                    if len(calls) == 1:
+                        raise error
+                    return original_fetch(turbine, issue, window)
+
+                try:
+                    with patch("src.data.build_features.WeatherClient", return_value=client), \
+                         patch.object(client, "fetch", side_effect=fetch):
+                        report = build(self.cfg, allow_missing=True)
+                    self.assertEqual(report["requested_issues"], 2)
+                    self.assertEqual(report["issues"], 1)
+                    self.assertEqual(report["rows"], 96)
+                    self.assertEqual(len(report["excluded_issues"]), 1)
+                    self.assertIn(str(error), report["excluded_issues"][0]["reason"])
+                    self.assertEqual(len(calls), 3)
+                finally:
+                    client.close()
 
     def test_missing_weather_and_wrong_units_rejected(self) -> None:
         payload = weather_payload(self.times)

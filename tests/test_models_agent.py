@@ -16,6 +16,7 @@ import pandas as pd
 from src.agent.run import ForecastAgent
 from src.agent.planner import decide
 from src.data.build_features import add_features
+from src.data.fetch_weather import WeatherUnavailableError
 from src.models.features import enrich, split_data
 from src.models.estimators import WindEstimator
 from src.models.train import apply_intervals
@@ -43,7 +44,7 @@ class StubClient:
     def fetch(self, turbine: dict[str, Any], issue: pd.Timestamp, times: pd.DatetimeIndex) -> pd.DataFrame:
         self.calls += 1
         if self.first_failure and self.calls == 1:
-            raise RuntimeError("Synthetic provider outage")
+            raise WeatherUnavailableError("Synthetic provider outage")
         # Earlier requested issue must represent an earlier available run.
         x = sample_weather(issue, times, turbine["id"])
         x["run_time"] = (issue - pd.Timedelta(hours=8)).floor("6h")
@@ -107,6 +108,48 @@ class ModelAgentTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "OPENAI_API_KEY"):
                 decide({"weather_failed": False}, use_llm=True)
         self.assertEqual(decide({"weather_failed": True})["action"], "retry_older")
+
+    def test_integrity_and_internal_failures_halt_without_older_run(self) -> None:
+        class FailingClient:
+            def __init__(self, error: Exception) -> None:
+                self.error = error
+                self.calls = 0
+
+            def fetch(self, *args: Any) -> pd.DataFrame:
+                self.calls += 1
+                raise self.error
+
+            def close(self) -> None:
+                return None
+
+        for error in (ValueError("Corrupt weather cache entry"),
+                      ValueError("Unexpected weather unit"),
+                      ValueError("Weather unavailable at issue"),
+                      RuntimeError("Unexpected internal failure")):
+            with self.subTest(error=str(error)), tempfile.TemporaryDirectory() as temp:
+                cfg = load_config(Path(__file__).resolve().parents[1] / "config/config.yaml")
+                cfg["_root"] = Path(temp)
+                (Path(temp) / "artifacts").mkdir()
+                issue = utc("2026-01-31T23:00Z")
+                # This fixture is created locally. No supplied/archive joblib
+                # is loaded, and forecasting must stop before touching a model.
+                joblib.dump({"model": None, "calibration": {}, "training_asof": str(issue),
+                             "weather_model": "ecmwf_ifs"}, Path(temp) / "artifacts/forecast_bundle.joblib")
+                client = FailingClient(error)
+                with patch("src.agent.run.WeatherClient", return_value=client):
+                    agent = ForecastAgent(cfg)
+                    try:
+                        with self.assertRaises(type(error)):
+                            agent.run(issue)
+                        self.assertEqual(client.calls, 1)
+                        with sqlite3.connect(agent.database) as db:
+                            states = [row[0] for row in db.execute("SELECT state FROM events")]
+                            published = db.execute("SELECT COUNT(*) FROM forecasts").fetchone()[0]
+                        self.assertIn("FAILED", states)
+                        self.assertNotIn("REPLAN", states)
+                        self.assertEqual(published, 0)
+                    finally:
+                        agent.close()
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ import pandas as pd
 
 from src.agent.planner import decide
 from src.data.build_features import add_features
-from src.data.fetch_weather import WeatherClient
+from src.data.fetch_weather import WeatherClient, WeatherUnavailableError
 from src.models.features import enrich
 from src.models.train import apply_intervals
 from src.utils.common import load_config, setup_logging, sha256_file, utc, write_csv, write_json
@@ -86,7 +86,7 @@ class ForecastAgent:
                         frames.append(frame)
                         successful = True
                         break
-                    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+                    except (WeatherUnavailableError, FileNotFoundError) as exc:
                         self.event(issue, "WEATHER_FAILED", {"turbine": turbine["id"], "age": age, "error": str(exc)})
                         if age >= max_age:
                             raise

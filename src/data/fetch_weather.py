@@ -25,6 +25,10 @@ UNITS = {"wind_speed_10m": "m/s", "wind_speed_100m": "m/s",
          "temperature_2m": "°C", "surface_pressure": "hPa"}
 
 
+class WeatherUnavailableError(RuntimeError):
+    """Transport/HTTP failure for which an older available run may be tried."""
+
+
 def select_run(issue_time: pd.Timestamp, cfg: dict[str, Any]) -> tuple[pd.Timestamp, pd.Timestamp, str]:
     """Return run time, available-at estimate/evidence, provenance basis."""
     issue = utc(issue_time)
@@ -157,13 +161,19 @@ class WeatherClient:
         request_text = json.dumps({"endpoint": self.w["endpoint"], "params": params}, sort_keys=True)
         key = hashlib.sha256(request_text.encode()).hexdigest()
         with closing(sqlite3.connect(self.cache, timeout=30)) as db:
-            cached = db.execute("SELECT payload_json, payload_sha256, fetched_at FROM weather_cache "
+            cached = db.execute("SELECT request_json, payload_json, payload_sha256, fetched_at FROM weather_cache "
                                 "WHERE cache_key=?", (key,)).fetchone()
+        # A refresh must not hide an existing integrity failure. The request
+        # and payload are both part of the cache's provenance contract.
+        if cached is not None:
+            stored_request, stored_body, stored_digest, _ = cached
+            if (hashlib.sha256(stored_request.encode()).hexdigest() != key or
+                    stored_request != request_text or
+                    hashlib.sha256(stored_body.encode()).hexdigest() != stored_digest):
+                raise ValueError(f"Corrupt weather cache entry {key}")
         cache_hit = cached is not None and not self.refresh
         if cache_hit:
-            body, digest, fetched_at = cached
-            if hashlib.sha256(body.encode()).hexdigest() != digest:
-                raise ValueError(f"Corrupt weather cache entry {key}")
+            _, body, digest, fetched_at = cached
             payload = json.loads(body)
             LOG.info("Weather cache hit turbine=%s run=%s", turbine["id"], run)
         else:
@@ -174,9 +184,14 @@ class WeatherClient:
                 response = self.session.get(self.w["endpoint"], params=params,
                     timeout=(self.w["connect_timeout_seconds"], self.w["read_timeout_seconds"]))
                 response.raise_for_status()
+            except requests.RequestException as exc:
+                raise WeatherUnavailableError(f"Weather retrieval failed for {turbine['id']} {run}: {exc}") from exc
+            # Malformed responses are validation failures, not permission to
+            # conceal the problem by falling back to a different weather run.
+            try:
                 payload = response.json()
-            except (requests.RequestException, ValueError) as exc:
-                raise RuntimeError(f"Weather retrieval failed for {turbine['id']} {run}: {exc}") from exc
+            except ValueError as exc:
+                raise ValueError(f"Invalid weather JSON for {turbine['id']} {run}") from exc
             if not isinstance(payload, dict):
                 raise ValueError("Expected single-location JSON object")
             body = json.dumps(payload, sort_keys=True, allow_nan=False)
@@ -186,15 +201,21 @@ class WeatherClient:
         if not cache_hit:
             with closing(sqlite3.connect(self.cache, timeout=30)) as db, db:
                 # Refresh that changes a historical response must be reviewed explicitly.
-                old = db.execute("SELECT payload_sha256, payload_json FROM weather_cache WHERE cache_key=?", (key,)).fetchone()
-                if old and old[0] != digest:
+                old = db.execute("SELECT request_json, payload_json, payload_sha256 FROM weather_cache WHERE cache_key=?", (key,)).fetchone()
+                if old and (old[0] != request_text or hashlib.sha256(old[0].encode()).hexdigest() != key or
+                            hashlib.sha256(old[1].encode()).hexdigest() != old[2]):
+                    raise ValueError(f"Corrupt weather cache entry {key}")
+                if old and old[2] != digest:
                     previous = json.loads(old[1])
                     if previous.get("hourly") != payload.get("hourly"):
                         raise ValueError("Archived hourly data changed; preserve cache and investigate")
                 db.execute("INSERT OR IGNORE INTO weather_cache VALUES (?, ?, ?, ?, ?)",
                            (key, request_text, body, digest, fetched_at))
-                stored = db.execute("SELECT payload_json, payload_sha256, fetched_at FROM weather_cache WHERE cache_key=?", (key,)).fetchone()
-                stored_body, digest, fetched_at = stored
+                stored = db.execute("SELECT request_json, payload_json, payload_sha256, fetched_at FROM weather_cache WHERE cache_key=?", (key,)).fetchone()
+                stored_request, stored_body, digest, fetched_at = stored
+                if (stored_request != request_text or hashlib.sha256(stored_request.encode()).hexdigest() != key or
+                        hashlib.sha256(stored_body.encode()).hexdigest() != digest):
+                    raise ValueError(f"Corrupt weather cache entry {key}")
                 payload = json.loads(stored_body)
                 frame = parse_response(payload, times, self.w["variables"])
         frame["turbine_id"] = turbine["id"]

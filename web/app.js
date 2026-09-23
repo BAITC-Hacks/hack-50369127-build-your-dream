@@ -242,7 +242,7 @@ function renderForecast() {
   $("metric-power-note").textContent = selected === "farm" ? "Среднее двух турбин · равные веса" : "Нормализованная мощность турбины";
   $("metric-wind-note").textContent = run ? (run.mode === "demo" ? "Синтетическая погодная траектория" : run.mode === "project" ? "Кеш проекта · ECMWF" : "Архивный погодный прогноз") : "Из выбранного погодного прогноза";
   $("metric-data-note").textContent = !dataset ? "Исторические данные не загружены" : dataset.demo ? "Синтетическая история · демо" : isProjectModel() ? "Обучающая выборка CatBoost из проекта" : "Загруженная история станции";
-  $("metric-hours-note").textContent = run ? "Выпуск на " + fmtDate(run.as_of) + " " + timezoneLabel() : "Почасовой шаг · 2 турбины";
+  $("metric-hours-note").textContent = run && Number(run.hours) !== app.hours ? "Выбрано " + app.hours + " ч. Применится после запроса прогноза." : run ? "Выпуск на " + fmtDate(run.as_of) + " " + timezoneLabel() : "Почасовой шаг · 2 турбины";
   $("chart-period").textContent = rows.length ? fmtDate(rows[0].valid_time) + " — " + fmtDate(rows[rows.length - 1].valid_time) + " · " + timezoneLabel() + (isSavedArchive(run) ? " · сохранённый расчёт" : "") : "Подготовьте данные, чтобы увидеть прогноз";
   $("chart-empty").hidden = rows.length > 0;
   const hasInterval = rows.some((row) => finite(row.lower) && finite(row.upper));
@@ -425,7 +425,10 @@ function renderProjectModel(model) {
     for (const metric of metrics) {
       const factor = ["percentage_points", "percent", "pct"].includes(metric.unit || model.metrics_unit) ? 1 : 100;
       const horizon = metric.horizon ?? metric.horizon_hours;
-      html += '<tr><td>' + escapeHTML(modelNames[metric.model] || metric.model || "CatBoost") + '</td><td>' + escapeHTML(metric.turbine_id ?? metric.turbine ?? "—") + '</td><td>' + escapeHTML(finite(horizon) ? n(horizon, true) + " ч" : safeText(horizon)) + '</td><td>' + n(metric.n ?? metric.rows, true) + '</td><td>' + (finite(metric.mae) ? n(Number(metric.mae) * factor) : "—") + '</td><td>' + (finite(metric.rmse) ? n(Number(metric.rmse) * factor) : "—") + '</td></tr>';
+      const turbine = metric.turbine_id ?? metric.turbine;
+      const turbineLabel = turbine === "ALL" ? "Обе турбины" : /^T?[12]$/.test(String(turbine)) ? "Турбина " + String(turbine).replace(/^T/, "") : safeText(turbine);
+      const horizonLabel = horizon === "ALL" ? "Все часы" : finite(horizon) ? n(horizon, true) + " ч" : /^\d+-\d+$/.test(String(horizon)) ? String(horizon).replace("-", "–") + " ч" : safeText(horizon);
+      html += '<tr><td>' + escapeHTML(modelNames[metric.model] || metric.model || "CatBoost") + '</td><td>' + escapeHTML(turbineLabel) + '</td><td>' + escapeHTML(horizonLabel) + '</td><td>' + n(metric.n ?? metric.rows, true) + '</td><td>' + (finite(metric.mae) ? n(Number(metric.mae) * factor) : "—") + '</td><td>' + (finite(metric.rmse) ? n(Number(metric.rmse) * factor) : "—") + '</td></tr>';
     }
     html += '</tbody></table></div>';
   } else {

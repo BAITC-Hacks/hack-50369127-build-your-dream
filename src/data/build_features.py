@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.data.fetch_weather import WeatherClient, VARIABLES
+from src.data.fetch_weather import WeatherClient, WeatherUnavailableError, VARIABLES
 from src.data.preprocess_telemetry import prepare_all
 from src.utils.common import load_config, resolve_path, setup_logging, utc, write_csv, write_json
 
@@ -87,7 +87,7 @@ def build(cfg: dict[str, Any], offline: bool = False, refresh: bool = False,
                 for turbine in cfg["turbines"]:
                     weather = client.fetch(turbine, issue, times)
                     daily.append(join_labels(weather, telemetry, cfg))
-            except (ValueError, RuntimeError, FileNotFoundError) as exc:
+            except (WeatherUnavailableError, FileNotFoundError) as exc:
                 if not allow_missing:
                     raise
                 LOG.warning("Excluding unavailable training issue %s: %s", issue, exc)

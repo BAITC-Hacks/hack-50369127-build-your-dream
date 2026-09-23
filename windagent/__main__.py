@@ -16,6 +16,7 @@ def main(argv=None):
     parser.add_argument("--workspace", type=Path, help="Папка результатов (по умолчанию runtime)")
     parser.add_argument("--config", type=Path, help="Путь к config.json")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("doctor", help="Проверить данные и готовность среды CatBoost без сетевых запросов")
     web = sub.add_parser("serve", help="Запустить локальную веб-панель")
     web.add_argument("--port", type=int, default=8080)
     demo = sub.add_parser("demo", help="Создать синтетическую историю и выполнить учебный прогноз")
@@ -59,7 +60,10 @@ def main(argv=None):
     try:
         agent = ForecastAgent(args.workspace, load_config(args.config))
         result = None
-        if args.command == "serve":
+        if args.command == "doctor":
+            from .doctor import diagnose
+            result = diagnose(agent)
+        elif args.command == "serve":
             serve(agent, args.port)
         elif args.command == "demo":
             agent.demo()
